@@ -1,0 +1,930 @@
+<!DOCTYPE html>
+<html lang="ja">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>Crush Dashboard</title>
+<style>
+  *, *::before, *::after { box-sizing: border-box; margin: 0; padding: 0; }
+  :root {
+    --bg-primary: #1a1b26;
+    --bg-secondary: #1e2030;
+    --bg-tertiary: #24263a;
+    --bg-hover: #2a2d42;
+    --bg-active: #333654;
+    --fg-primary: #a9b1d6;
+    --fg-secondary: #787c99;
+    --fg-bright: #c0caf5;
+    --fg-dim: #414868;
+    --accent: #7aa2f7;
+    --accent-dim: #3d59a1;
+    --green: #9ece6a;
+    --red: #f7768e;
+    --orange: #e0af68;
+    --yellow: #e0af68;
+    --cyan: #7dcfff;
+    --purple: #bb9af7;
+    --border: #2a2d3e;
+    --scrollbar: #2a2d3e;
+    --scrollbar-hover: #3a3d5e;
+    --user-bg: #1e2a4a;
+    --assistant-bg: #1e2030;
+    --radius: 6px;
+    --font-mono: 'JetBrains Mono', 'Fira Code', 'SF Mono', 'Cascadia Code', Consolas, monospace;
+    --font-sans: 'Inter', 'SF Pro Display', -apple-system, BlinkMacSystemFont, 'Segoe UI', sans-serif;
+  }
+  html, body { height: 100%; }
+  body {
+    font-family: var(--font-sans);
+    background: var(--bg-primary);
+    color: var(--fg-primary);
+    display: flex;
+    height: 100%;
+    overflow: hidden;
+    font-size: 14px;
+    line-height: 1.5;
+  }
+  ::-webkit-scrollbar { width: 8px; height: 8px; }
+  ::-webkit-scrollbar-track { background: transparent; }
+  ::-webkit-scrollbar-thumb { background: var(--scrollbar); border-radius: 4px; }
+  ::-webkit-scrollbar-thumb:hover { background: var(--scrollbar-hover); }
+
+  /* Layout */
+  .layout {
+    display: flex;
+    width: 100%;
+    height: 100%;
+  }
+  .sidebar {
+    width: 280px;
+    min-width: 200px;
+    max-width: 500px;
+    background: var(--bg-secondary);
+    border-right: 1px solid var(--border);
+    display: flex;
+    flex-direction: column;
+    overflow: hidden;
+    position: relative;
+    flex-shrink: 0;
+  }
+  .sidebar-header {
+    padding: 12px 16px;
+    font-weight: 600;
+    font-size: 13px;
+    color: var(--fg-bright);
+    border-bottom: 1px solid var(--border);
+    display: flex;
+    align-items: center;
+    gap: 8px;
+    user-select: none;
+  }
+  .sidebar-header .logo {
+    width: 18px;
+    height: 18px;
+    background: var(--accent);
+    border-radius: 4px;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    font-size: 11px;
+    color: #1a1b26;
+    font-weight: 700;
+  }
+  .resize-handle {
+    position: absolute;
+    right: 0;
+    top: 0;
+    bottom: 0;
+    width: 4px;
+    cursor: col-resize;
+    z-index: 10;
+    transition: background 0.2s;
+  }
+  .resize-handle:hover, .resize-handle.active {
+    background: var(--accent);
+  }
+  .sidebar-content {
+    flex: 1;
+    overflow-y: auto;
+    overflow-x: hidden;
+    padding: 8px 0;
+  }
+
+  /* Tree */
+  .tree-item {
+    user-select: none;
+  }
+  .tree-node {
+    display: flex;
+    align-items: center;
+    padding: 4px 12px;
+    cursor: pointer;
+    border-radius: 4px;
+    margin: 1px 8px;
+    gap: 6px;
+    transition: background 0.1s;
+    white-space: nowrap;
+    overflow: hidden;
+    position: relative;
+  }
+  .tree-node:hover {
+    background: var(--bg-hover);
+  }
+  .tree-node.active {
+    background: var(--bg-active);
+    color: var(--fg-bright);
+  }
+  .tree-toggle {
+    width: 16px;
+    height: 16px;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    font-size: 10px;
+    color: var(--fg-secondary);
+    transition: transform 0.15s;
+    flex-shrink: 0;
+  }
+  .tree-toggle.expanded {
+    transform: rotate(90deg);
+  }
+  .tree-toggle.hidden {
+    visibility: hidden;
+  }
+  .tree-icon {
+    flex-shrink: 0;
+    font-size: 14px;
+  }
+  .tree-label {
+    overflow: hidden;
+    text-overflow: ellipsis;
+  }
+  .tree-children {
+    padding-left: 16px;
+  }
+  .tree-children.collapsed {
+    display: none;
+  }
+  .tree-project {
+    padding-left: 8px;
+  }
+  .tree-session {
+    font-size: 13px;
+  }
+  .tree-session .tree-icon {
+    color: var(--accent);
+  }
+  .tree-count {
+    margin-left: auto;
+    font-size: 11px;
+    color: var(--fg-dim);
+    padding-right: 4px;
+  }
+
+  /* Context menu */
+  .context-menu {
+    position: fixed;
+    background: var(--bg-tertiary);
+    border: 1px solid var(--border);
+    border-radius: var(--radius);
+    padding: 4px;
+    min-width: 180px;
+    box-shadow: 0 8px 24px rgba(0,0,0,0.4);
+    z-index: 1000;
+    display: none;
+  }
+  .context-menu.visible {
+    display: block;
+  }
+  .context-menu-item {
+    padding: 6px 12px;
+    cursor: pointer;
+    border-radius: 4px;
+    display: flex;
+    align-items: center;
+    gap: 8px;
+    font-size: 13px;
+    transition: background 0.1s;
+  }
+  .context-menu-item:hover {
+    background: var(--bg-hover);
+  }
+  .context-menu-item.disabled {
+    color: var(--fg-dim);
+    cursor: default;
+  }
+  .context-menu-item.disabled:hover {
+    background: transparent;
+  }
+  .context-menu-sep {
+    height: 1px;
+    background: var(--border);
+    margin: 4px 8px;
+  }
+  .context-menu-icon {
+    width: 18px;
+    text-align: center;
+    font-size: 13px;
+  }
+  .context-menu-key {
+    margin-left: auto;
+    font-size: 11px;
+    color: var(--fg-dim);
+  }
+
+  /* Main content */
+  .main {
+    flex: 1;
+    overflow: hidden;
+    display: flex;
+    flex-direction: column;
+    background: var(--bg-primary);
+  }
+  .main-header {
+    padding: 12px 24px;
+    border-bottom: 1px solid var(--border);
+    display: flex;
+    align-items: center;
+    gap: 12px;
+    min-height: 48px;
+  }
+  .main-header .title {
+    font-weight: 600;
+    font-size: 15px;
+    color: var(--fg-bright);
+  }
+  .main-header .subtitle {
+    font-size: 12px;
+    color: var(--fg-secondary);
+  }
+
+  /* Welcome */
+  .welcome {
+    flex: 1;
+    display: flex;
+    flex-direction: column;
+    align-items: center;
+    justify-content: center;
+    gap: 16px;
+    color: var(--fg-secondary);
+    padding: 40px;
+    text-align: center;
+  }
+  .welcome-icon {
+    width: 64px;
+    height: 64px;
+    background: var(--accent-dim);
+    border-radius: 16px;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    font-size: 28px;
+    color: var(--accent);
+  }
+  .welcome h2 {
+    font-size: 18px;
+    color: var(--fg-bright);
+    font-weight: 500;
+  }
+  .welcome p {
+    font-size: 14px;
+    max-width: 400px;
+    line-height: 1.6;
+  }
+
+  /* Chat view */
+  .chat-view {
+    flex: 1;
+    overflow-y: auto;
+    padding: 24px;
+  }
+  .chat-view::-webkit-scrollbar { width: 8px; }
+  .message {
+    margin-bottom: 20px;
+    max-width: 100%;
+    animation: fadeIn 0.2s ease-out;
+  }
+  @keyframes fadeIn {
+    from { opacity: 0; transform: translateY(4px); }
+    to { opacity: 1; transform: translateY(0); }
+  }
+  .message-header {
+    display: flex;
+    align-items: center;
+    gap: 8px;
+    margin-bottom: 6px;
+    font-size: 12px;
+    color: var(--fg-secondary);
+  }
+  .message-role {
+    font-weight: 600;
+    font-size: 12px;
+  }
+  .message-role.user { color: var(--accent); }
+  .message-role.assistant { color: var(--green); }
+  .message-time { color: var(--fg-dim); font-size: 11px; }
+  .message-body {
+    padding: 12px 16px;
+    border-radius: var(--radius);
+    background: var(--assistant-bg);
+    line-height: 1.6;
+  }
+  .message.user .message-body {
+    background: var(--user-bg);
+    border: 1px solid rgba(122,162,247,0.15);
+  }
+  .message-body .text {
+    white-space: pre-wrap;
+    word-break: break-word;
+  }
+
+  /* Collapsible sections */
+  .collapsible {
+    margin: 4px 0;
+    border-radius: var(--radius);
+    border: 1px solid var(--border);
+    overflow: hidden;
+  }
+  .collapsible-header {
+    display: flex;
+    align-items: center;
+    gap: 6px;
+    padding: 8px 12px;
+    background: var(--bg-tertiary);
+    cursor: pointer;
+    font-size: 12px;
+    color: var(--fg-secondary);
+    transition: background 0.1s;
+    user-select: none;
+  }
+  .collapsible-header:hover {
+    background: var(--bg-hover);
+  }
+  .collapsible-arrow {
+    font-size: 9px;
+    transition: transform 0.15s;
+    flex-shrink: 0;
+  }
+  .collapsible-arrow.expanded {
+    transform: rotate(90deg);
+  }
+  .collapsible-body {
+    padding: 8px 12px;
+    font-size: 13px;
+    line-height: 1.6;
+    display: none;
+  }
+  .collapsible-body.expanded {
+    display: block;
+  }
+  .collapsible-body pre {
+    background: var(--bg-primary);
+    padding: 8px 12px;
+    border-radius: 4px;
+    overflow-x: auto;
+    font-family: var(--font-mono);
+    font-size: 12px;
+    line-height: 1.5;
+    margin: 4px 0;
+    white-space: pre-wrap;
+    word-break: break-word;
+  }
+  .collapsible-body code {
+    font-family: var(--font-mono);
+    font-size: 12px;
+  }
+  .collapsible-body .tool-name {
+    color: var(--purple);
+    font-weight: 600;
+    font-family: var(--font-mono);
+    font-size: 11px;
+  }
+  .collapsible-body .thinking {
+    color: var(--orange);
+    font-style: italic;
+  }
+  .collapsible-body .error {
+    color: var(--red);
+  }
+
+  /* Loading */
+  .loading {
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    height: 100%;
+    color: var(--fg-secondary);
+    font-size: 14px;
+    gap: 12px;
+  }
+  .loading-spinner {
+    width: 20px;
+    height: 20px;
+    border: 2px solid var(--border);
+    border-top-color: var(--accent);
+    border-radius: 50%;
+    animation: spin 0.8s linear infinite;
+  }
+  @keyframes spin {
+    to { transform: rotate(360deg); }
+  }
+
+  /* Toast */
+  .toast-container {
+    position: fixed;
+    bottom: 24px;
+    right: 24px;
+    z-index: 2000;
+    display: flex;
+    flex-direction: column;
+    gap: 8px;
+  }
+  .toast {
+    background: var(--bg-tertiary);
+    border: 1px solid var(--border);
+    border-radius: var(--radius);
+    padding: 10px 16px;
+    font-size: 13px;
+    color: var(--fg-primary);
+    box-shadow: 0 4px 12px rgba(0,0,0,0.3);
+    animation: toastIn 0.3s ease-out;
+    display: flex;
+    align-items: center;
+    gap: 8px;
+  }
+  .toast.success { border-left: 3px solid var(--green); }
+  .toast.error { border-left: 3px solid var(--red); }
+  .toast.info { border-left: 3px solid var(--accent); }
+  @keyframes toastIn {
+    from { opacity: 0; transform: translateY(8px); }
+    to { opacity: 1; transform: translateY(0); }
+  }
+
+  /* Empty state in chat */
+  .empty-chat {
+    text-align: center;
+    color: var(--fg-dim);
+    padding: 40px;
+    font-size: 13px;
+  }
+</style>
+</head>
+<body>
+<div class="layout">
+  <!-- Sidebar -->
+  <div class="sidebar" id="sidebar">
+    <div class="sidebar-header">
+      <div class="logo">C</div>
+      Crush Dashboard
+    </div>
+    <div class="sidebar-content" id="tree-content">
+      <div class="loading">
+        <div class="loading-spinner"></div>
+        <span>Loading projects…</span>
+      </div>
+    </div>
+    <div class="resize-handle" id="resize-handle"></div>
+  </div>
+
+  <!-- Main -->
+  <div class="main" id="main-content">
+    <div class="welcome" id="welcome">
+      <div class="welcome-icon">C</div>
+      <h2>Crush Dashboard</h2>
+      <p>Select a session from the tree to view conversation details.<br>Right-click for options.</p>
+    </div>
+    <div id="chat-area" style="display:none; flex:1; flex-direction:column; overflow:hidden;">
+      <div class="main-header" id="chat-header"></div>
+      <div class="chat-view" id="chat-view"></div>
+    </div>
+  </div>
+</div>
+
+<!-- Context menu -->
+<div class="context-menu" id="context-menu"></div>
+
+<!-- Toast container -->
+<div class="toast-container" id="toast-container"></div>
+
+<script>
+(function() {
+  'use strict';
+
+  // State
+  let projects = [];
+  let selectedSession = null;
+  let expandedFolders = new Set();
+
+  // DOM
+  const treeContent = document.getElementById('tree-content');
+  const welcome = document.getElementById('welcome');
+  const chatArea = document.getElementById('chat-area');
+  const chatHeader = document.getElementById('chat-header');
+  const chatView = document.getElementById('chat-view');
+  const contextMenu = document.getElementById('context-menu');
+  const toastContainer = document.getElementById('toast-container');
+  const resizeHandle = document.getElementById('resize-handle');
+  const sidebar = document.getElementById('sidebar');
+
+  // API
+  async function fetchJSON(url) {
+    const res = await fetch(url);
+    if (!res.ok) throw new Error(`HTTP ${res.status}: ${res.statusText}`);
+    return res.json();
+  }
+
+  async function loadProjects() {
+    try {
+      projects = await fetchJSON('/api/projects');
+      renderTree();
+    } catch (e) {
+      treeContent.innerHTML = `<div class="empty-chat">Failed to load projects:<br><span style="color:var(--red)">${esc(e.message)}</span></div>`;
+    }
+  }
+
+  async function loadSessionMessages(sessionId, dataDir) {
+    try {
+      chatView.innerHTML = `<div class="loading"><div class="loading-spinner"></div><span>Loading…</span></div>`;
+      const detail = await fetchJSON(`/api/sessions/${encodeURIComponent(sessionId)}?dataDir=${encodeURIComponent(dataDir)}`);
+      renderChat(detail);
+    } catch (e) {
+      chatView.innerHTML = `<div class="empty-chat">Failed to load session:<br><span style="color:var(--red)">${esc(e.message)}</span></div>`;
+    }
+  }
+
+  async function actionCommand(action, sessionId, dataDir, title) {
+    try {
+      const res = await fetch(`/api/command`, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ action, sessionId, dataDir, title })
+      });
+      if (!res.ok) throw new Error(`HTTP ${res.status}`);
+      const data = await res.json();
+      if (data.error) throw new Error(data.error);
+      if (data.success) showToast('Success', 'success');
+      if (data.reloaded) loadProjects();
+    } catch (e) {
+      showToast(e.message, 'error');
+    }
+  }
+
+  // Render tree
+  function renderTree() {
+    if (projects.length === 0) {
+      treeContent.innerHTML = `<div class="empty-chat">No projects found.<br>Run <code style="color:var(--accent)">crush projects</code> to register directories.</div>`;
+      return;
+    }
+    let html = '';
+    for (const proj of projects) {
+      const path = proj.path || proj.Path;
+      const sessions = proj.sessions || proj.Sessions;
+      const sessionCount = sessions ? sessions.length : 0;
+      const pathId = b64(path);
+
+      html += `<div class="tree-item">`;
+      html += `<div class="tree-node tree-project" data-path="${esc(path)}" data-path-id="${pathId}" data-type="project">`;
+      html += `<span class="tree-toggle ${expandedFolders.has(pathId) ? 'expanded' : ''}">▶</span>`;
+      html += `<span class="tree-icon">📁</span>`;
+      html += `<span class="tree-label">${esc(path)}</span>`;
+      if (sessionCount > 0) html += `<span class="tree-count">${sessionCount}</span>`;
+      html += `</div>`;
+      html += `<div class="tree-children ${expandedFolders.has(pathId) ? '' : 'collapsed'}">`;
+      if (sessions && sessions.length > 0) {
+        for (const sess of sessions) {
+          const sid = sess.id || sess.ID;
+          const stitle = sess.title || sess.Title || 'Untitled';
+          const created = sess.created_at || sess.CreatedAt || '';
+          html += `<div class="tree-node tree-session" data-session-id="${sid}" data-path="${esc(path)}" data-dir="${esc(sess.data_dir || sess.DataDir || path)}" data-path-id="${pathId}" data-type="session" data-created="${created}">`;
+          html += `<span class="tree-toggle hidden">▶</span>`;
+          html += `<span class="tree-icon">💬</span>`;
+          html += `<span class="tree-label">${esc(stitle)}</span>`;
+          html += `</div>`;
+        }
+      } else {
+        html += `<div class="tree-node" style="color:var(--fg-dim); cursor:default;">`;
+        html += `<span class="tree-toggle hidden">▶</span>`;
+        html += `<span class="tree-icon" style="font-size:10px;">—</span>`;
+        html += `<span class="tree-label">No sessions</span>`;
+        html += `</div>`;
+      }
+      html += `</div></div>`;
+    }
+    treeContent.innerHTML = html;
+
+    // Events
+    treeContent.querySelectorAll('.tree-node').forEach(node => {
+      node.addEventListener('click', handleNodeClick);
+      node.addEventListener('contextmenu', handleContextMenu);
+    });
+    treeContent.addEventListener('wheel', handleSidebarWheel, { passive: true });
+  }
+
+  function handleNodeClick(e) {
+    const node = e.currentTarget;
+    const type = node.dataset.type;
+    const pathId = node.dataset.pathId;
+
+    if (type === 'project') {
+      if (expandedFolders.has(pathId)) {
+        expandedFolders.delete(pathId);
+      } else {
+        expandedFolders.add(pathId);
+      }
+      renderTree();
+      return;
+    }
+
+    if (type === 'session') {
+      const sessionId = node.dataset.sessionId;
+      const path = node.dataset.path;
+      const dataDir = node.dataset.dir;
+      const created = node.dataset.created;
+      selectedSession = { id: sessionId, path: path, created: created, dataDir: dataDir };
+      highlightSession(node);
+      showChatHeader(path, created);
+      welcome.style.display = 'none';
+      chatArea.style.display = 'flex';
+      loadSessionMessages(sessionId, dataDir);
+    }
+  }
+
+  function highlightSession(node) {
+    treeContent.querySelectorAll('.tree-node.active').forEach(n => n.classList.remove('active'));
+    node.classList.add('active');
+  }
+
+  function showChatHeader(path, created) {
+    const date = created ? formatDate(created) : '';
+    chatHeader.innerHTML = `<span class="title">${esc(path)}</span><span class="subtitle">${date}</span>`;
+  }
+
+  function renderChat(detail) {
+    const msgs = detail.messages || detail.Messages || [];
+    if (msgs.length === 0) {
+      chatView.innerHTML = `<div class="empty-chat">No messages in this session.</div>`;
+      return;
+    }
+    let html = '';
+    for (const msg of msgs) {
+      html += renderMessage(msg);
+    }
+    chatView.innerHTML = html;
+    chatView.scrollTop = chatView.scrollHeight;
+
+    // Collapsible events
+    chatView.querySelectorAll('.collapsible-header').forEach(header => {
+      header.addEventListener('click', function() {
+        const arrow = this.querySelector('.collapsible-arrow');
+        const body = this.nextElementSibling;
+        if (arrow) arrow.classList.toggle('expanded');
+        body.classList.toggle('expanded');
+      });
+    });
+  }
+
+  function renderMessage(msg) {
+    const role = msg.role || 'unknown';
+    const parts = msg.parts || msg.Parts || [];
+    const model = msg.model || msg.Model || '';
+    const provider = msg.provider || msg.Provider || '';
+    const time = msg.created_at || msg.CreatedAt || '';
+
+    let html = `<div class="message ${role}">`;
+
+    // Header
+    html += `<div class="message-header">`;
+    html += `<span class="message-role ${role}">${role === 'user' ? '👤 You' : '🤖 Assistant'}</span>`;
+    if (model) html += `<span class="message-time">${esc(model)}`;
+    if (provider) html += ` <span style="color:var(--fg-dim)">(${esc(provider)})</span>`;
+    html += `</span></div>`;
+    if (time) html += `<div class="message-header" style="margin-top:-4px;margin-bottom:4px;"><span class="message-time">${formatDate(time)}</span></div>`;
+
+    // Body
+    html += `<div class="message-body">`;
+    for (const part of parts) {
+      html += renderPart(part);
+    }
+    html += `</div></div>`;
+
+    return html;
+  }
+
+  function renderPart(part) {
+    const type = part.type || '';
+    switch (type) {
+      case 'text':
+        if (part.text) return `<div class="text">${esc(part.text)}</div>`;
+        return '';
+      case 'reasoning':
+        if (part.thinking) {
+          return `<div class="collapsible">
+            <div class="collapsible-header">
+              <span class="collapsible-arrow">▶</span>
+              <span class="tool-name">🧠 Reasoning</span>
+            </div>
+            <div class="collapsible-body"><span class="thinking">${esc(part.thinking)}</span></div>
+          </div>`;
+        }
+        return '';
+      case 'tool_call':
+        if (part.name) {
+          let inputHtml = '';
+          if (part.input) {
+            inputHtml = `<pre>${esc(part.input)}</pre>`;
+          }
+          return `<div class="collapsible">
+            <div class="collapsible-header">
+              <span class="collapsible-arrow">▶</span>
+              <span class="tool-name">🔧 ${esc(part.name)}</span>
+              ${part.tool_call_id ? `<span class="message-time" style="margin-left:auto">${esc(part.tool_call_id.substring(0, 12))}</span>` : ''}
+            </div>
+            <div class="collapsible-body">${inputHtml}</div>
+          </div>`;
+        }
+        return '';
+      case 'tool_result':
+        if (part.name) {
+          const isError = part.is_error;
+          let contentHtml = '';
+          if (part.content) {
+            contentHtml = `<pre class="${isError ? 'error' : ''}">${esc(part.content)}</pre>`;
+          }
+          return `<div class="collapsible">
+            <div class="collapsible-header">
+              <span class="collapsible-arrow">▶</span>
+              <span class="tool-name">${isError ? '❌' : '✅'} ${esc(part.name)}</span>
+              ${part.tool_call_id ? `<span class="message-time" style="margin-left:auto">${esc(part.tool_call_id.substring(0, 12))}</span>` : ''}
+            </div>
+            <div class="collapsible-body">${contentHtml}</div>
+          </div>`;
+        }
+        return '';
+      case 'finish':
+        if (part.reason) return `<div style="font-size:11px;color:var(--fg-dim);margin-top:4px;">[${esc(part.reason)}]</div>`;
+        return '';
+      default:
+        return '';
+    }
+  }
+
+  // Context menu
+  function handleContextMenu(e) {
+    e.preventDefault();
+    const node = e.currentTarget;
+    const type = node.dataset.type;
+    const path = node.dataset.path || '';
+    const sessionId = node.dataset.sessionId || '';
+    const pathId = node.dataset.pathId || '';
+
+    const menu = contextMenu;
+    menu.innerHTML = '';
+
+    if (type === 'project') {
+      addMenuItem(menu, '🚀', 'Open New Session', () => {
+        hideContextMenu();
+        actionCommand('open_new', '', path, '');
+      });
+      addMenuItem(menu, '⚙️', 'Project Info', () => {
+        hideContextMenu();
+        showToast('Project info coming soon', 'info');
+      }, true);
+    } else if (type === 'session') {
+      addMenuItem(menu, '🚀', 'Open Session', () => {
+        hideContextMenu();
+        actionCommand('open', sessionId, node.dataset.dir, '');
+      });
+      addMenuItem(menu, '✏️', 'Rename', () => {
+        hideContextMenu();
+        handleRename(node);
+      });
+      addMenuItem(menu, '🗑️', 'Delete', () => {
+        hideContextMenu();
+        handleDelete(sessionId, node.dataset.dir);
+      });
+    }
+
+    menu.style.left = `${e.clientX}px`;
+    menu.style.top = `${e.clientY}px`;
+    menu.classList.add('visible');
+    adjustContextMenuPosition();
+  }
+
+  function addMenuItem(menu, icon, label, onClick, disabled) {
+    const item = document.createElement('div');
+    item.className = 'context-menu-item' + (disabled ? ' disabled' : '');
+    if (disabled) item.style.pointerEvents = 'none';
+    item.innerHTML = `<span class="context-menu-icon">${icon}</span><span>${label}</span>`;
+    if (!disabled) item.addEventListener('click', onClick);
+    menu.appendChild(item);
+  }
+
+  function adjustContextMenuPosition() {
+    const menu = contextMenu;
+    const rect = menu.getBoundingClientRect();
+    if (rect.right > window.innerWidth) {
+      menu.style.left = `${window.innerWidth - rect.width - 8}px`;
+    }
+    if (rect.bottom > window.innerHeight) {
+      menu.style.top = `${window.innerHeight - rect.height - 8}px`;
+    }
+  }
+
+  function hideContextMenu() {
+    contextMenu.classList.remove('visible');
+  }
+
+  // Rename
+  function handleRename(node) {
+    const sessionId = node.dataset.sessionId;
+    const dataDir = node.dataset.dir;
+    const currentTitle = node.querySelector('.tree-label')?.textContent || '';
+    const newTitle = prompt('Rename session:', currentTitle);
+    if (newTitle && newTitle.trim() && newTitle !== currentTitle) {
+      actionCommand('rename', sessionId, dataDir, newTitle.trim());
+    }
+  }
+
+  // Delete
+  function handleDelete(sessionId, dataDir) {
+    if (confirm('Delete this session? This cannot be undone.')) {
+      actionCommand('delete', sessionId, dataDir, '');
+    }
+  }
+
+  // Resize
+  let isResizing = false;
+  resizeHandle.addEventListener('mousedown', startResize);
+  document.addEventListener('mousemove', doResize);
+  document.addEventListener('mouseup', stopResize);
+
+  function startResize(e) {
+    isResizing = true;
+    resizeHandle.classList.add('active');
+    e.preventDefault();
+  }
+
+  function doResize(e) {
+    if (!isResizing) return;
+    sidebar.style.width = `${Math.max(200, Math.min(500, e.clientX))}px`;
+  }
+
+  function stopResize() {
+    isResizing = false;
+    resizeHandle.classList.remove('active');
+  }
+
+  // Scroll wheel on sidebar scrolls content
+  function handleSidebarWheel(e) {
+    if (!e.shiftKey) return;
+    e.preventDefault();
+    treeContent.scrollTop += e.deltaY;
+  }
+
+  // Close context menu on outside click
+  document.addEventListener('click', (e) => {
+    if (!contextMenu.contains(e.target)) {
+      hideContextMenu();
+    }
+  });
+
+  // Toast
+  function showToast(message, type) {
+    const toast = document.createElement('div');
+    toast.className = `toast ${type}`;
+    toast.textContent = message;
+    toastContainer.appendChild(toast);
+    setTimeout(() => {
+      toast.style.opacity = '0';
+      toast.style.transform = 'translateY(8px)';
+      toast.style.transition = 'all 0.3s';
+      setTimeout(() => toast.remove(), 300);
+    }, 3000);
+  }
+
+  // Helpers
+  function esc(s) {
+    const d = document.createElement('div');
+    d.textContent = s || '';
+    return d.innerHTML;
+  }
+
+  function b64(s) {
+    try { return btoa(unescape(encodeURIComponent(s))); } catch { return s; }
+  }
+
+  function formatDate(ts) {
+    if (!ts) return '';
+    try {
+      const d = new Date(ts);
+      if (isNaN(d)) return ts;
+      return d.toLocaleDateString() + ' ' + d.toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' });
+    } catch { return ts; }
+  }
+
+  // Init
+  loadProjects();
+})();
+</script>
+</body>
+</html>
