@@ -311,7 +311,9 @@ func standardHandlers(blockFuncs []BlockFunc) []execMiddleware {
 }
 
 // builtinHandler returns middleware that dispatches recognized Crush
-// builtins to their in-process Go implementations. Currently: jq.
+// builtins to their in-process Go implementations. Builtins registered via
+// RegisterBuiltin (e.g. config builtins from shellconfig) are also dispatched
+// here. Config builtins are no-ops without a ConfigBuilder on the context.
 func builtinHandler() execMiddleware {
 	return func(next interp.ExecHandlerFunc) interp.ExecHandlerFunc {
 		return func(ctx context.Context, args []string) error {
@@ -323,6 +325,10 @@ func builtinHandler() execMiddleware {
 				hc := interp.HandlerCtx(ctx)
 				return handleJQ(ctx, args, hc.Stdin, hc.Stdout, hc.Stderr)
 			default:
+				if h, ok := extraBuiltins[args[0]]; ok {
+					hc := interp.HandlerCtx(ctx)
+					return h(ctx, args, hc.Stdin, hc.Stdout, hc.Stderr)
+				}
 				return next(ctx, args)
 			}
 		}
