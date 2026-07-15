@@ -20,7 +20,8 @@ The dashboard shows:
 - Right-click menus for session management (open, rename, delete)`,
 	RunE: func(cmd *cobra.Command, args []string) error {
 		debug, _ := cmd.Flags().GetBool("debug")
-		if err := dashboard.Start(debug); err != nil {
+		exportDir, _ := cmd.Flags().GetString("export-dir")
+		if err := dashboard.Start(debug, exportDir); err != nil {
 			slog.Error("Dashboard failed", "error", err)
 			return err
 		}
@@ -31,4 +32,5 @@ The dashboard shows:
 func init() {
 	rootCmd.AddCommand(dashboardCmd)
 	dashboardCmd.Flags().Bool("debug", false, "enable debug logging")
+	dashboardCmd.Flags().String("export-dir", "", "output directory for session export (markdown)")
 }
