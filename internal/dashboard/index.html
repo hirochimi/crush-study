@@ -51,14 +51,25 @@
 
   /* Layout */
   .layout {
-    display: flex;
+    display: grid;
+    grid-template-columns: var(--sidebar-width, 25vw) 1fr;
     width: 100%;
     height: 100%;
   }
+  .sidebar.collapsed {
+    width: 0 !important;
+    min-width: 0 !important;
+    max-width: 0 !important;
+    border-right: none;
+    overflow: hidden;
+  }
+  .sidebar.collapsed .resize-handle {
+    display: none;
+  }
   .sidebar {
-    width: 280px;
-    min-width: 200px;
-    max-width: 500px;
+    width: var(--sidebar-width);
+    min-width: var(--sidebar-width);
+    max-width: var(--sidebar-width);
     background: var(--bg-secondary);
     border-right: 1px solid var(--border);
     display: flex;
@@ -66,6 +77,7 @@
     overflow: hidden;
     position: relative;
     flex-shrink: 0;
+    transition: border 0.2s ease;
   }
   .sidebar-header {
     padding: 12px 16px;
@@ -77,6 +89,22 @@
     align-items: center;
     gap: 8px;
     user-select: none;
+  }
+  .sidebar-toggle-btn {
+    width: 20px;
+    height: 20px;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    cursor: pointer;
+    border-radius: 4px;
+    color: var(--fg-secondary);
+    transition: background 0.1s, color 0.1s;
+    flex-shrink: 0;
+  }
+  .sidebar-toggle-btn:hover {
+    background: var(--bg-hover);
+    color: var(--fg-bright);
   }
   .sidebar-header .logo {
     width: 18px;
@@ -92,12 +120,13 @@
   }
   .resize-handle {
     position: absolute;
-    right: 0;
+    right: -2px;
     top: 0;
     bottom: 0;
     width: 4px;
     cursor: col-resize;
     z-index: 10;
+    background: transparent;
     transition: background 0.2s;
   }
   .resize-handle:hover, .resize-handle.active {
@@ -234,11 +263,36 @@
 
   /* Main content */
   .main {
-    flex: 1;
-    overflow: hidden;
+    height: 100%;
+    min-height: 0;
     display: flex;
     flex-direction: column;
-    background: var(--bg-primary);
+    overflow: hidden;
+  }
+  .expand-btn {
+    position: fixed;
+    left: 8px;
+    top: 8px;
+    width: 28px;
+    height: 28px;
+    display: none;
+    align-items: center;
+    justify-content: center;
+    background: var(--bg-tertiary);
+    border: 1px solid var(--border);
+    border-radius: var(--radius);
+    cursor: pointer;
+    color: var(--fg-secondary);
+    font-size: 14px;
+    z-index: 100;
+    transition: background 0.1s, color 0.1s;
+  }
+  .expand-btn:hover {
+    background: var(--bg-hover);
+    color: var(--fg-bright);
+  }
+  .sidebar.collapsed ~ .main .expand-btn {
+    display: flex;
   }
   .main-header {
     padding: 12px 24px;
@@ -293,14 +347,22 @@
   }
 
   /* Chat view */
+  #chat-area {
+    height: 100%;
+    min-height: 0;
+    overflow: hidden;
+    display: flex;
+    flex-direction: column;
+  }
   .chat-view {
-    flex: 1;
+    flex: 1 1 0%;
+    min-height: 0;
     overflow-y: auto;
-    padding: 24px;
+    padding: 12px;
   }
   .chat-view::-webkit-scrollbar { width: 8px; }
   .message {
-    margin-bottom: 20px;
+    margin-bottom: 10px;
     max-width: 100%;
     animation: fadeIn 0.2s ease-out;
   }
@@ -311,23 +373,49 @@
   .message-header {
     display: flex;
     align-items: center;
-    gap: 8px;
-    margin-bottom: 6px;
-    font-size: 12px;
+    gap: 6px;
+    font-size: 11px;
     color: var(--fg-secondary);
+    margin-bottom: 3px;
   }
   .message-role {
     font-weight: 600;
-    font-size: 12px;
+    font-size: 11px;
+    display: flex;
+    align-items: center;
+    gap: 4px;
+    white-space: nowrap;
   }
   .message-role.user { color: var(--accent); }
   .message-role.assistant { color: var(--green); }
-  .message-time { color: var(--fg-dim); font-size: 11px; }
+  .message-time { color: var(--fg-dim); font-size: 10px; white-space: nowrap; }
+  .message-model {
+    font-size: 10px;
+    color: var(--fg-dim);
+    position: relative;
+    cursor: default;
+  }
+  .message-model:hover::after {
+    content: attr(data-model);
+    position: absolute;
+    bottom: 100%;
+    left: 0;
+    background: var(--bg-tertiary);
+    border: 1px solid var(--border);
+    border-radius: 4px;
+    padding: 3px 8px;
+    font-size: 10px;
+    color: var(--fg-secondary);
+    white-space: nowrap;
+    z-index: 10;
+    margin-bottom: 4px;
+    box-shadow: 0 2px 8px rgba(0,0,0,0.3);
+  }
   .message-body {
-    padding: 12px 16px;
+    padding: 6px 8px;
     border-radius: var(--radius);
     background: var(--assistant-bg);
-    line-height: 1.6;
+    line-height: 1.5;
   }
   .message.user .message-body {
     background: var(--user-bg);
@@ -340,7 +428,7 @@
 
   /* Collapsible sections */
   .collapsible {
-    margin: 4px 0;
+    margin: 2px 0;
     border-radius: var(--radius);
     border: 1px solid var(--border);
     overflow: hidden;
@@ -349,10 +437,10 @@
     display: flex;
     align-items: center;
     gap: 6px;
-    padding: 8px 12px;
+    padding: 5px 8px;
     background: var(--bg-tertiary);
     cursor: pointer;
-    font-size: 12px;
+    font-size: 11px;
     color: var(--fg-secondary);
     transition: background 0.1s;
     user-select: none;
@@ -369,9 +457,9 @@
     transform: rotate(90deg);
   }
   .collapsible-body {
-    padding: 8px 12px;
-    font-size: 13px;
-    line-height: 1.6;
+    padding: 5px 8px;
+    font-size: 12px;
+    line-height: 1.5;
     display: none;
   }
   .collapsible-body.expanded {
@@ -379,25 +467,25 @@
   }
   .collapsible-body pre {
     background: var(--bg-primary);
-    padding: 8px 12px;
+    padding: 5px 8px;
     border-radius: 4px;
     overflow-x: auto;
     font-family: var(--font-mono);
-    font-size: 12px;
+    font-size: 11px;
     line-height: 1.5;
-    margin: 4px 0;
+    margin: 2px 0;
     white-space: pre-wrap;
     word-break: break-word;
   }
   .collapsible-body code {
     font-family: var(--font-mono);
-    font-size: 12px;
+    font-size: 11px;
   }
   .collapsible-body .tool-name {
     color: var(--purple);
     font-weight: 600;
     font-family: var(--font-mono);
-    font-size: 11px;
+    font-size: 10px;
   }
   .collapsible-body .thinking {
     color: var(--orange);
@@ -474,6 +562,7 @@
   <!-- Sidebar -->
   <div class="sidebar" id="sidebar">
     <div class="sidebar-header">
+      <div class="sidebar-toggle-btn" id="sidebar-toggle" title="Collapse sidebar">◀</div>
       <div class="logo">C</div>
       Crush Dashboard
     </div>
@@ -488,20 +577,20 @@
 
   <!-- Main -->
   <div class="main" id="main-content">
+    <div class="expand-btn" id="expand-btn" title="Expand sidebar">▶</div>
     <div class="welcome" id="welcome">
       <div class="welcome-icon">C</div>
       <h2>Crush Dashboard</h2>
       <p>Select a session from the tree to view conversation details.<br>Right-click for options.</p>
     </div>
-    <div id="chat-area" style="display:none; flex:1; flex-direction:column; overflow:hidden;">
+    <div id="chat-area" style="display:none;" class="chat-area-flex">
       <div class="main-header" id="chat-header"></div>
       <div class="chat-view" id="chat-view"></div>
     </div>
   </div>
 </div>
 
-<!-- Context menu -->
-<div class="context-menu" id="context-menu"></div>
+<!-- Context menu --><div class="context-menu" id="context-menu"></div>
 
 <!-- Toast container -->
 <div class="toast-container" id="toast-container"></div>
@@ -523,8 +612,55 @@
   const chatView = document.getElementById('chat-view');
   const contextMenu = document.getElementById('context-menu');
   const toastContainer = document.getElementById('toast-container');
+  const expandBtn = document.getElementById('expand-btn');
+  const sidebarToggle = document.getElementById('sidebar-toggle');
   const resizeHandle = document.getElementById('resize-handle');
   const sidebar = document.getElementById('sidebar');
+
+  // Sidebar collapse/expand
+  sidebarToggle.addEventListener('click', (e) => {
+    e.stopPropagation();
+    sidebar.classList.toggle('collapsed');
+    if (sidebar.classList.contains('collapsed')) {
+      sidebarToggle.textContent = '▶';
+    } else {
+      sidebarToggle.textContent = '◀';
+    }
+  });
+
+  expandBtn.addEventListener('click', () => {
+    sidebar.classList.remove('collapsed');
+    sidebarToggle.textContent = '◀';
+  });
+
+  // Sidebar resize
+  const layout = document.querySelector('.layout');
+  const MIN_WIDTH = 200;
+  const MAX_WIDTH = Math.floor(window.innerWidth / 2);
+  let isResizing = false;
+
+  resizeHandle.addEventListener('mousedown', (e) => {
+    e.preventDefault();
+    isResizing = true;
+    resizeHandle.classList.add('active');
+    document.body.style.cursor = 'col-resize';
+    document.body.style.userSelect = 'none';
+  });
+
+  document.addEventListener('mousemove', (e) => {
+    if (!isResizing) return;
+    const newWidth = Math.min(MAX_WIDTH, Math.max(MIN_WIDTH, e.clientX));
+    layout.style.setProperty('--sidebar-width', newWidth + 'px');
+    sidebar.style.setProperty('--sidebar-width', newWidth + 'px');
+  });
+
+  document.addEventListener('mouseup', () => {
+    if (!isResizing) return;
+    isResizing = false;
+    resizeHandle.classList.remove('active');
+    document.body.style.cursor = '';
+    document.body.style.userSelect = '';
+  });
 
   // API
   async function fetchJSON(url) {
@@ -564,6 +700,23 @@
       if (data.error) throw new Error(data.error);
       if (data.success) showToast('Success', 'success');
       if (data.reloaded) loadProjects();
+    } catch (e) {
+      showToast(e.message, 'error');
+    }
+  }
+
+  async function exportSession(sessionId, dataDir, projectPath) {
+    try {
+      showToast('Exporting...', 'info');
+      const res = await fetch(`/api/command`, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ action: 'export', sessionId, dataDir, projectPath })
+      });
+      if (!res.ok) throw new Error(`HTTP ${res.status}`);
+      const data = await res.json();
+      if (data.error) throw new Error(data.error);
+      showToast('Exported successfully', 'success');
     } catch (e) {
       showToast(e.message, 'error');
     }
@@ -692,25 +845,29 @@
 
     let html = `<div class="message ${role}">`;
 
-    // Header
+    // Header: one line — {date/time} {emoji role} {model hover}
     html += `<div class="message-header">`;
-    html += `<span class="message-role ${role}">${role === 'user' ? '👤 You' : '🤖 Assistant'}</span>`;
-    if (model) html += `<span class="message-time">${esc(model)}`;
-    if (provider) html += ` <span style="color:var(--fg-dim)">(${esc(provider)})</span>`;
-    html += `</span></div>`;
-    if (time) html += `<div class="message-header" style="margin-top:-4px;margin-bottom:4px;"><span class="message-time">${formatDate(time)}</span></div>`;
+    html += `<span class="message-time">${formatDate(time)}</span>`;
+    const emoji = role === 'user' ? '👤' : '🤖';
+    const label = role === 'user' ? 'You' : 'Assistant';
+    html += `<span class="message-role ${role}">${emoji} ${label}</span>`;
+    if (model) {
+      const modelLabel = provider ? `${model} (${provider})` : model;
+      html += `<span class="message-model" data-model="${esc(modelLabel)}">${esc(modelLabel)}</span>`;
+    }
+    html += `</div>`;
 
     // Body
     html += `<div class="message-body">`;
     for (const part of parts) {
-      html += renderPart(part);
+      html += renderPart(part, role);
     }
     html += `</div></div>`;
 
     return html;
   }
 
-  function renderPart(part) {
+  function renderPart(part, role) {
     const type = part.type || '';
     switch (type) {
       case 'text':
@@ -736,7 +893,7 @@
           return `<div class="collapsible">
             <div class="collapsible-header">
               <span class="collapsible-arrow">▶</span>
-              <span class="tool-name">🔧 ${esc(part.name)}</span>
+              <span class="tool-name">🛠️ ${esc(part.name)}</span>
               ${part.tool_call_id ? `<span class="message-time" style="margin-left:auto">${esc(part.tool_call_id.substring(0, 12))}</span>` : ''}
             </div>
             <div class="collapsible-body">${inputHtml}</div>
@@ -761,7 +918,7 @@
         }
         return '';
       case 'finish':
-        if (part.reason) return `<div style="font-size:11px;color:var(--fg-dim);margin-top:4px;">[${esc(part.reason)}]</div>`;
+        // Hidden — no display for finish reasons
         return '';
       default:
         return '';
@@ -793,6 +950,10 @@
       addMenuItem(menu, '🚀', 'Open Session', () => {
         hideContextMenu();
         actionCommand('open', sessionId, node.dataset.dir, '');
+      });
+      addMenuItem(menu, '📥', 'Export Markdown', () => {
+        hideContextMenu();
+        exportSession(sessionId, node.dataset.dir, node.dataset.path);
       });
       addMenuItem(menu, '✏️', 'Rename', () => {
         hideContextMenu();
@@ -850,28 +1011,6 @@
     if (confirm('Delete this session? This cannot be undone.')) {
       actionCommand('delete', sessionId, dataDir, '');
     }
-  }
-
-  // Resize
-  let isResizing = false;
-  resizeHandle.addEventListener('mousedown', startResize);
-  document.addEventListener('mousemove', doResize);
-  document.addEventListener('mouseup', stopResize);
-
-  function startResize(e) {
-    isResizing = true;
-    resizeHandle.classList.add('active');
-    e.preventDefault();
-  }
-
-  function doResize(e) {
-    if (!isResizing) return;
-    sidebar.style.width = `${Math.max(200, Math.min(500, e.clientX))}px`;
-  }
-
-  function stopResize() {
-    isResizing = false;
-    resizeHandle.classList.remove('active');
   }
 
   // Scroll wheel on sidebar scrolls content

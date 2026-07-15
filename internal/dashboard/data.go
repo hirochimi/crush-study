@@ -238,6 +238,189 @@ func DeleteSession(dataDir, sessionID string) error {
 	return nil
 }
 
+// ExportSession exports a session's conversation as a markdown file.
+func ExportSession(dataDir, sessionID, outputDir, projectPath string) error {
+	detail, err := GetSessionDetail(dataDir, sessionID)
+	if err != nil {
+		return fmt.Errorf("failed to get session detail: %w", err)
+	}
+
+	// Build filename: {snake_case_project}_{session_title}.md
+	projectName := snakeCase(projectPath)
+	title := sanitizeFilename(detail.Title)
+	filename := fmt.Sprintf("%s_%s.md", projectName, title)
+
+	// Ensure output directory exists
+	if err := os.MkdirAll(outputDir, 0o755); err != nil {
+		return fmt.Errorf("failed to create output directory: %w", err)
+	}
+
+	filePath := fmt.Sprintf("%s/%s", outputDir, filename)
+	if err := os.WriteFile(filePath, []byte(buildMarkdown(detail)), 0o644); err != nil {
+		return fmt.Errorf("failed to write markdown file: %w", err)
+	}
+	return nil
+}
+
+// sanitizeFilename removes characters that are invalid in file names.
+func sanitizeFilename(s string) string {
+	invalid := []string{"\\", "/", ":", "*", "?", "\"", "<", ">", "|"}
+	result := s
+	for _, c := range invalid {
+		result = strings.ReplaceAll(result, c, "_")
+	}
+	result = strings.TrimSpace(result)
+	if result == "" {
+		result = "untitled"
+	}
+	return result
+}
+
+// snakeCase converts a filesystem path to a snake_case identifier.
+func snakeCase(path string) string {
+	// Extract the last directory component (project name).
+	last := path
+	if idx := strings.LastIndex(path, "/"); idx >= 0 {
+		last = path[idx+1:]
+	}
+	// Remove common extension-like suffixes (e.g. ".git").
+	last = strings.TrimSuffix(last, ".git")
+	// Replace separators: dash, space, underscore to underscore.
+	last = strings.ReplaceAll(last, "-", "_")
+	last = strings.ReplaceAll(last, " ", "_")
+	// Convert CamelCase to snake_case.
+	var buf strings.Builder
+	for i, r := range last {
+		if i > 0 && r >= 'A' && r <= 'Z' {
+			buf.WriteRune('_')
+		}
+		buf.WriteRune(r)
+	}
+	last = buf.String()
+	// Lowercase and collapse multiple underscores.
+	last = strings.ToLower(last)
+	result := strings.Trim(last, "_")
+	for strings.Contains(result, "__") {
+		result = strings.ReplaceAll(result, "__", "_")
+	}
+	if result == "" {
+		result = "project"
+	}
+	return result
+}
+
+// buildMarkdown formats a session detail as a markdown meeting notes document.
+func buildMarkdown(detail *SessionDetail) string {
+	var sb strings.Builder
+
+	sb.WriteString("# ")
+	sb.WriteString(detail.Title)
+	sb.WriteString("\n\n")
+
+	// Metadata section
+	sb.WriteString("## メタデータ\n\n")
+	if detail.CreatedAt != "" {
+		sb.WriteString("- **作成日時**: `")
+		sb.WriteString(detail.CreatedAt)
+		sb.WriteString("`\n")
+	}
+	if detail.UpdatedAt != "" {
+		sb.WriteString("- **更新日時**: `")
+		sb.WriteString(detail.UpdatedAt)
+		sb.WriteString("`\n")
+	}
+	if detail.MessageCount > 0 {
+		sb.WriteString(fmt.Sprintf("- **メッセージ数**: %d\n", detail.MessageCount))
+	}
+	if detail.PromptTokens > 0 || detail.CompletionTokens > 0 {
+		sb.WriteString(fmt.Sprintf("- **トークン数**: プロンプト %d / 完了 %d\n", detail.PromptTokens, detail.CompletionTokens))
+	}
+	if detail.Cost > 0 {
+		sb.WriteString(fmt.Sprintf("- **コスト**: %.6f\n", detail.Cost))
+	}
+
+	sb.WriteString("\n")
+
+	// Messages section
+	sb.WriteString("## 議事録\n\n")
+	for _, msg := range detail.Messages {
+		role := msg.Role
+		time := msg.CreatedAt
+		parts := msg.Parts
+		model := msg.Model
+		provider := msg.Provider
+
+		// Message header
+		if role == "user" {
+			sb.WriteString(fmt.Sprintf("### 👤 ユーザー  %s\n\n", time))
+		} else if role == "assistant" {
+			sb.WriteString(fmt.Sprintf("### 🤖 アシスタント  %s\n\n", time))
+		} else {
+			sb.WriteString(fmt.Sprintf("### %s  %s\n\n", role, time))
+		}
+
+		if model != "" {
+			sb.WriteString("*モデル: `")
+			sb.WriteString(model)
+			if provider != "" {
+				sb.WriteString(" (")
+				sb.WriteString(provider)
+				sb.WriteString(")")
+			}
+			sb.WriteString("`*\n\n")
+		}
+
+		// Render parts
+		for _, part := range parts {
+			switch part.Type {
+			case "text":
+				if part.Text != "" {
+					sb.WriteString(part.Text)
+					sb.WriteString("\n\n")
+				}
+			case "reasoning":
+				if part.Thinking != "" {
+					sb.WriteString("> 🧠 *推論:* ")
+					sb.WriteString(part.Thinking)
+					sb.WriteString("\n\n")
+				}
+			case "tool_call":
+				if part.ToolName != "" {
+					sb.WriteString("#### 🔧 ")
+					sb.WriteString(part.ToolName)
+					sb.WriteString("\n\n")
+				}
+				if part.ToolInput != "" {
+					sb.WriteString("```")
+					sb.WriteString(part.ToolName)
+					sb.WriteString("\n")
+					sb.WriteString(part.ToolInput)
+					sb.WriteString("\n```\n\n")
+				}
+			case "tool_result":
+				sb.WriteString(fmt.Sprintf("- **ツール `%s` の結果**: ", part.ToolName))
+				if part.IsError {
+					sb.WriteString("❌ ")
+				} else {
+					sb.WriteString("✅ ")
+				}
+				if part.Content != "" {
+					sb.WriteString("\n```\n")
+					sb.WriteString(part.Content)
+					sb.WriteString("\n```\n")
+				}
+				sb.WriteString("\n")
+			case "finish":
+				if part.Reason != "" {
+					sb.WriteString(fmt.Sprintf("[終了理由: %s]\n", part.Reason))
+				}
+			}
+		}
+	}
+
+	return sb.String()
+}
+
 // OpenTerminal opens an external terminal emulator at the given directory.
 func OpenTerminal(dir string, sessionID string) error {
 	cmd := buildTerminalCommand(dir, sessionID)

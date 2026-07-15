@@ -22,7 +22,7 @@ import (
 var htmlFS embed.FS
 
 // Start launches the dashboard HTTP server and opens it in the default browser.
-func Start(debug bool) error {
+func Start(debug bool, exportDir string) error {
 	// Set up slog to output to stderr (root.go sets DiscardHandler).
 	opts := &slog.HandlerOptions{Level: slog.LevelInfo}
 	if debug {
@@ -34,7 +34,9 @@ func Start(debug bool) error {
 
 	mux.HandleFunc("/api/projects", handleProjects)
 	mux.HandleFunc("/api/sessions/", handleSessionMessages)
-	mux.HandleFunc("/api/command", handleCommand)
+	mux.HandleFunc("/api/command", func(w http.ResponseWriter, r *http.Request) {
+		handleCommand(w, r, exportDir)
+	})
 	mux.HandleFunc("/", handleStatic)
 
 	addr := findFreePort()
@@ -159,17 +161,18 @@ func handleSessionMessages(w http.ResponseWriter, r *http.Request) {
 	json.NewEncoder(w).Encode(data)
 }
 
-func handleCommand(w http.ResponseWriter, r *http.Request) {
+func handleCommand(w http.ResponseWriter, r *http.Request, exportDir string) {
 	if r.Method != http.MethodPost {
 		http.Error(w, "method not allowed", http.StatusMethodNotAllowed)
 		return
 	}
 
 	var req struct {
-		Action    string `json:"action"`
-		SessionID string `json:"sessionId"`
-		DataDir   string `json:"dataDir"`
-		Title     string `json:"title"`
+		Action      string `json:"action"`
+		SessionID   string `json:"sessionId"`
+		DataDir     string `json:"dataDir"`
+		Title       string `json:"title"`
+		ProjectPath string `json:"projectPath"`
 	}
 	if err := json.NewDecoder(r.Body).Decode(&req); err != nil {
 		http.Error(w, "bad request", http.StatusBadRequest)
@@ -209,6 +212,16 @@ func handleCommand(w http.ResponseWriter, r *http.Request) {
 		}
 		resp["success"] = true
 		resp["reloaded"] = true
+	case "export":
+		if exportDir == "" {
+			resp["error"] = "export directory not configured. use --export-dir flag"
+			return
+		}
+		if err := ExportSession(req.DataDir, req.SessionID, exportDir, req.ProjectPath); err != nil {
+			resp["error"] = err.Error()
+			return
+		}
+		resp["success"] = true
 	default:
 		resp["error"] = "unknown action: " + req.Action
 		return
