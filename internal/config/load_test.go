@@ -9,7 +9,6 @@ import (
 	"os"
 	"os/exec"
 	"path/filepath"
-	"runtime"
 	"testing"
 	"time"
 
@@ -134,16 +133,14 @@ func TestLookupConfigs_BoundedByProject(t *testing.T) {
 		require.Contains(t, got, GlobalConfigData())
 	})
 
-	t.Run("system config is loaded first", func(t *testing.T) {
-		if runtime.GOOS == "windows" {
-			t.Skip("system config not supported on Windows")
-		}
+t.Run("global shell config (crush.sh) is included", func(t *testing.T) {
+		project := t.TempDir()
 
-		got := lookupConfigs(t.TempDir())
-		require.NotEmpty(t, got)
-		// The system-wide config must be first so it has the lowest
-		// priority when configs are merged.
-		require.Equal(t, "/etc/crush/crush.json", got[0])
+		got := lookupConfigs(project)
+		// A global crush.sh must be discoverable alongside crush.json,
+		// otherwise ~/.config/crush/crush.sh would silently never load.
+		require.Contains(t, got, shConfigVariant(GlobalConfig()))
+		require.Contains(t, got, shConfigVariant(GlobalConfigData()))
 	})
 }
 
