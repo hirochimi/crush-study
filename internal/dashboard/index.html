@@ -555,6 +555,44 @@
     padding: 40px;
     font-size: 13px;
   }
+
+  /* Copy button */
+  .text-container {
+    position: relative;
+  }
+  .copy-btn {
+    position: absolute;
+    top: 4px;
+    right: 4px;
+    width: 22px;
+    height: 22px;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    background: var(--bg-tertiary);
+    border: 1px solid var(--border);
+    border-radius: 4px;
+    cursor: pointer;
+    color: var(--fg-secondary);
+    font-size: 11px;
+    opacity: 0;
+    transition: background 0.1s, color 0.1s, opacity 0.1s;
+    z-index: 5;
+    padding: 0;
+    line-height: 1;
+  }
+  .text-container:hover .copy-btn,
+  .collapsible-body.expanded .copy-btn {
+    opacity: 1;
+  }
+  .copy-btn:hover {
+    background: var(--bg-hover);
+    color: var(--fg-bright);
+  }
+  .copy-btn.copied {
+    color: var(--green);
+    border-color: var(--green);
+  }
 </style>
 </head>
 <body>
@@ -834,6 +872,26 @@
         body.classList.toggle('expanded');
       });
     });
+
+    // Copy button events
+    chatView.querySelectorAll('.copy-btn').forEach(btn => {
+      btn.addEventListener('click', function(e) {
+        e.stopPropagation();
+        const container = this.parentElement;
+        const textEl = container.querySelector('.text, pre');
+        const text = textEl ? textEl.textContent : container.textContent.replace('📋', '').replace('✅', '').trim();
+        navigator.clipboard.writeText(text).then(() => {
+          this.textContent = '✅';
+          this.classList.add('copied');
+          setTimeout(() => {
+            this.textContent = '📋';
+            this.classList.remove('copied');
+          }, 1500);
+        }).catch(() => {
+          showToast('Failed to copy', 'error');
+        });
+      });
+    });
   }
 
   function renderMessage(msg) {
@@ -871,7 +929,10 @@
     const type = part.type || '';
     switch (type) {
       case 'text':
-        if (part.text) return `<div class="text">${esc(part.text)}</div>`;
+        if (part.text) return `<div class="text-container">
+          <button class="copy-btn" title="Copy">📋</button>
+          <div class="text">${esc(part.text)}</div>
+        </div>`;
         return '';
       case 'reasoning':
         if (part.thinking) {
@@ -880,7 +941,7 @@
               <span class="collapsible-arrow">▶</span>
               <span class="tool-name">🧠 Reasoning</span>
             </div>
-            <div class="collapsible-body"><span class="thinking">${esc(part.thinking)}</span></div>
+            <div class="collapsible-body"><button class="copy-btn" title="Copy">📋</button><span class="thinking">${esc(part.thinking)}</span></div>
           </div>`;
         }
         return '';
@@ -888,7 +949,7 @@
         if (part.name) {
           let inputHtml = '';
           if (part.input) {
-            inputHtml = `<pre>${esc(part.input)}</pre>`;
+            inputHtml = `<button class="copy-btn" title="Copy">📋</button><pre>${esc(part.input)}</pre>`;
           }
           return `<div class="collapsible">
             <div class="collapsible-header">
@@ -905,7 +966,7 @@
           const isError = part.is_error;
           let contentHtml = '';
           if (part.content) {
-            contentHtml = `<pre class="${isError ? 'error' : ''}">${esc(part.content)}</pre>`;
+            contentHtml = `<button class="copy-btn" title="Copy">📋</button><pre class="${isError ? 'error' : ''}">${esc(part.content)}</pre>`;
           }
           return `<div class="collapsible">
             <div class="collapsible-header">
