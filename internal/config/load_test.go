@@ -167,7 +167,7 @@ func TestLoadFromConfigPaths_InvalidJSON(t *testing.T) {
 		require.NoError(t, os.WriteFile(good, []byte(`{"providers":{}}`), 0o644))
 		require.NoError(t, os.WriteFile(bad, []byte(`{not valid json}`), 0o644))
 
-		_, _, err := loadFromConfigPaths([]string{good, bad})
+		_, _, err := loadFromConfigPaths(context.Background(), []string{good, bad})
 		require.Error(t, err)
 		require.Contains(t, err.Error(), "invalid JSON in config file")
 		require.Contains(t, err.Error(), "bad.json")
@@ -179,7 +179,7 @@ func TestLoadFromConfigPaths_InvalidJSON(t *testing.T) {
 		empty := filepath.Join(tmpDir, "empty.json")
 		require.NoError(t, os.WriteFile(empty, []byte(""), 0o644))
 
-		cfg, _, err := loadFromConfigPaths([]string{
+		cfg, _, err := loadFromConfigPaths(context.Background(), []string{
 			filepath.Join(tmpDir, "nonexistent.json"),
 			empty,
 		})
@@ -210,7 +210,7 @@ func TestLoadFromConfigPaths_ConflictWarningNamesKeys(t *testing.T) {
 		require.NoError(t, os.WriteFile(jsonPath, []byte(`{"options":{"debug":true},"providers":{}}`), 0o644))
 		require.NoError(t, os.WriteFile(rcPath, []byte("option debug true\n"), 0o644))
 
-		_, _, err := loadFromConfigPaths([]string{jsonPath, rcPath})
+		_, _, err := loadFromConfigPaths(context.Background(), []string{jsonPath, rcPath})
 		require.NoError(t, err)
 		require.Contains(t, buf.String(), "crushrc taking precedence")
 		require.Contains(t, buf.String(), `"conflicting_keys":"options"`)
@@ -224,7 +224,7 @@ func TestLoadFromConfigPaths_ConflictWarningNamesKeys(t *testing.T) {
 		require.NoError(t, os.WriteFile(jsonPath, []byte(`{"providers":{}}`), 0o644))
 		require.NoError(t, os.WriteFile(rcPath, []byte("option debug true\n"), 0o644))
 
-		_, _, err := loadFromConfigPaths([]string{jsonPath, rcPath})
+		_, _, err := loadFromConfigPaths(context.Background(), []string{jsonPath, rcPath})
 		require.NoError(t, err)
 		require.Contains(t, buf.String(), "crushrc taking precedence")
 		require.NotContains(t, buf.String(), "conflicting_keys")
