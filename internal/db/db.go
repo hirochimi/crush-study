@@ -42,11 +42,20 @@ func Prepare(ctx context.Context, db DBTX) (*Queries, error) {
 	if q.deleteSessionStmt, err = db.PrepareContext(ctx, deleteSession); err != nil {
 		return nil, fmt.Errorf("error preparing query DeleteSession: %w", err)
 	}
+	if q.deleteAllSessionsStmt, err = db.PrepareContext(ctx, deleteAllSessions); err != nil {
+		return nil, fmt.Errorf("error preparing query DeleteAllSessions: %w", err)
+	}
 	if q.deleteSessionFilesStmt, err = db.PrepareContext(ctx, deleteSessionFiles); err != nil {
 		return nil, fmt.Errorf("error preparing query DeleteSessionFiles: %w", err)
 	}
 	if q.deleteSessionMessagesStmt, err = db.PrepareContext(ctx, deleteSessionMessages); err != nil {
 		return nil, fmt.Errorf("error preparing query DeleteSessionMessages: %w", err)
+	}
+	if q.deleteAllSessionMessagesStmt, err = db.PrepareContext(ctx, deleteAllSessionMessages); err != nil {
+		return nil, fmt.Errorf("error preparing query DeleteAllSessionMessages: %w", err)
+	}
+	if q.deleteAllSessionFilesStmt, err = db.PrepareContext(ctx, deleteAllSessionFiles); err != nil {
+		return nil, fmt.Errorf("error preparing query DeleteAllSessionFiles: %w", err)
 	}
 	if q.getAverageResponseTimeStmt, err = db.PrepareContext(ctx, getAverageResponseTime); err != nil {
 		return nil, fmt.Errorf("error preparing query GetAverageResponseTime: %w", err)
@@ -173,6 +182,11 @@ func (q *Queries) Close() error {
 			err = fmt.Errorf("error closing deleteSessionStmt: %w", cerr)
 		}
 	}
+	if q.deleteAllSessionsStmt != nil {
+		if cerr := q.deleteAllSessionsStmt.Close(); cerr != nil {
+			err = fmt.Errorf("error closing deleteAllSessionsStmt: %w", cerr)
+		}
+	}
 	if q.deleteSessionFilesStmt != nil {
 		if cerr := q.deleteSessionFilesStmt.Close(); cerr != nil {
 			err = fmt.Errorf("error closing deleteSessionFilesStmt: %w", cerr)
@@ -181,6 +195,16 @@ func (q *Queries) Close() error {
 	if q.deleteSessionMessagesStmt != nil {
 		if cerr := q.deleteSessionMessagesStmt.Close(); cerr != nil {
 			err = fmt.Errorf("error closing deleteSessionMessagesStmt: %w", cerr)
+		}
+	}
+	if q.deleteAllSessionMessagesStmt != nil {
+		if cerr := q.deleteAllSessionMessagesStmt.Close(); cerr != nil {
+			err = fmt.Errorf("error closing deleteAllSessionMessagesStmt: %w", cerr)
+		}
+	}
+	if q.deleteAllSessionFilesStmt != nil {
+		if cerr := q.deleteAllSessionFilesStmt.Close(); cerr != nil {
+			err = fmt.Errorf("error closing deleteAllSessionFilesStmt: %w", cerr)
 		}
 	}
 	if q.getAverageResponseTimeStmt != nil {
@@ -378,8 +402,11 @@ type Queries struct {
 	deleteFileStmt                       *sql.Stmt
 	deleteMessageStmt                    *sql.Stmt
 	deleteSessionStmt                    *sql.Stmt
+	deleteAllSessionsStmt                *sql.Stmt
 	deleteSessionFilesStmt               *sql.Stmt
 	deleteSessionMessagesStmt            *sql.Stmt
+	deleteAllSessionMessagesStmt         *sql.Stmt
+	deleteAllSessionFilesStmt            *sql.Stmt
 	getAverageResponseTimeStmt           *sql.Stmt
 	getFileStmt                          *sql.Stmt
 	getFileByPathAndSessionStmt          *sql.Stmt
@@ -422,8 +449,11 @@ func (q *Queries) WithTx(tx *sql.Tx) *Queries {
 		deleteFileStmt:                       q.deleteFileStmt,
 		deleteMessageStmt:                    q.deleteMessageStmt,
 		deleteSessionStmt:                    q.deleteSessionStmt,
+		deleteAllSessionsStmt:                q.deleteAllSessionsStmt,
 		deleteSessionFilesStmt:               q.deleteSessionFilesStmt,
 		deleteSessionMessagesStmt:            q.deleteSessionMessagesStmt,
+		deleteAllSessionMessagesStmt:         q.deleteAllSessionMessagesStmt,
+		deleteAllSessionFilesStmt:            q.deleteAllSessionFilesStmt,
 		getAverageResponseTimeStmt:           q.getAverageResponseTimeStmt,
 		getFileStmt:                          q.getFileStmt,
 		getFileByPathAndSessionStmt:          q.getFileByPathAndSessionStmt,

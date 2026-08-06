@@ -42,6 +42,9 @@ WHERE id = ?;
 DELETE FROM messages
 WHERE session_id = ?;
 
+-- name: DeleteAllSessionMessages :exec
+DELETE FROM messages;
+
 -- name: ListUserMessagesBySession :many
 SELECT *
 FROM messages

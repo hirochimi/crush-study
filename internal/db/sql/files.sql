@@ -44,6 +44,9 @@ WHERE id = ?;
 DELETE FROM files
 WHERE session_id = ?;
 
+-- name: DeleteAllSessionFiles :exec
+DELETE FROM files;
+
 -- name: ListLatestSessionFiles :many
 SELECT f.*
 FROM files f

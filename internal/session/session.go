@@ -74,6 +74,7 @@ type Service interface {
 	UpdateTitleAndUsage(ctx context.Context, sessionID, title string, promptTokens, completionTokens int64, cost float64) error
 	Rename(ctx context.Context, id string, title string) error
 	Delete(ctx context.Context, id string) error
+	DeleteAllSessions(ctx context.Context) error
 
 	// Agent tool session management
 	CreateAgentToolSessionID(messageID, toolCallID string) string
@@ -165,6 +166,32 @@ func (s *service) Delete(ctx context.Context, id string) error {
 	s.clearEstimatedUsageState(dbSession.ID)
 	s.Publish(pubsub.DeletedEvent, session)
 	event.SessionDeleted()
+	return nil
+}
+
+func (s *service) DeleteAllSessions(ctx context.Context) error {
+	tx, err := s.db.BeginTx(ctx, nil)
+	if err != nil {
+		return fmt.Errorf("beginning transaction: %w", err)
+	}
+	defer tx.Rollback() //nolint:errcheck
+
+	qtx := s.q.WithTx(tx)
+
+	// Delete all messages first, then all files, then all root sessions.
+	if err = qtx.DeleteAllSessionMessages(ctx); err != nil {
+		return fmt.Errorf("deleting all session messages: %w", err)
+	}
+	if err = qtx.DeleteAllSessionFiles(ctx); err != nil {
+		return fmt.Errorf("deleting all session files: %w", err)
+	}
+	if err = qtx.DeleteAllSessions(ctx); err != nil {
+		return fmt.Errorf("deleting all sessions: %w", err)
+	}
+	if err = tx.Commit(); err != nil {
+		return fmt.Errorf("committing transaction: %w", err)
+	}
+
 	return nil
 }
 

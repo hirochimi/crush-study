@@ -73,6 +73,15 @@ func (q *Queries) DeleteSessionFiles(ctx context.Context, sessionID string) erro
 	return err
 }
 
+const deleteAllSessionFiles = `-- name: DeleteAllSessionFiles :exec
+DELETE FROM files
+`
+
+func (q *Queries) DeleteAllSessionFiles(ctx context.Context) error {
+	_, err := q.exec(ctx, q.deleteAllSessionFilesStmt, deleteAllSessionFiles)
+	return err
+}
+
 const getFile = `-- name: GetFile :one
 SELECT id, session_id, path, content, version, created_at, updated_at
 FROM files

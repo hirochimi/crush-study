@@ -73,6 +73,16 @@ func (q *Queries) CreateSession(ctx context.Context, arg CreateSessionParams) (S
 	return i, err
 }
 
+const deleteAllSessions = `-- name: DeleteAllSessions :exec
+DELETE FROM sessions
+WHERE parent_session_id IS NULL
+`
+
+func (q *Queries) DeleteAllSessions(ctx context.Context) error {
+	_, err := q.exec(ctx, q.deleteAllSessionsStmt, deleteAllSessions)
+	return err
+}
+
 const deleteSession = `-- name: DeleteSession :exec
 DELETE FROM sessions
 WHERE id = ?

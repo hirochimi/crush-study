@@ -212,16 +212,51 @@ func handleCommand(w http.ResponseWriter, r *http.Request, exportDir string) {
 		}
 		resp["success"] = true
 		resp["reloaded"] = true
+	case "delete_project":
+		if err := DeleteProject(req.DataDir); err != nil {
+			resp["error"] = err.Error()
+			return
+		}
+		resp["success"] = true
+		resp["reloaded"] = true
+	case "delete_all":
+		if err := DeleteAllSessions(req.DataDir); err != nil {
+			resp["error"] = err.Error()
+			return
+		}
+		resp["success"] = true
+		resp["reloaded"] = true
 	case "export":
 		if exportDir == "" {
 			resp["error"] = "export directory not configured. use --export-dir flag"
 			return
 		}
-		if err := ExportSession(req.DataDir, req.SessionID, exportDir, req.ProjectPath); err != nil {
+		if err := os.MkdirAll(exportDir, 0o755); err != nil {
+			resp["error"] = fmt.Sprintf("failed to create export directory: %s", err.Error())
+			return
+		}
+		if _, err := ExportSession(req.DataDir, req.SessionID, exportDir, req.ProjectPath); err != nil {
 			resp["error"] = err.Error()
 			return
 		}
 		resp["success"] = true
+	case "export_all":
+		if exportDir == "" {
+			resp["error"] = "export directory not configured. use --export-dir flag"
+			return
+		}
+		if err := os.MkdirAll(exportDir, 0o755); err != nil {
+			resp["error"] = fmt.Sprintf("failed to create export directory: %s", err.Error())
+			return
+		}
+		total, done, err := ExportAllSessions(req.DataDir, exportDir, req.ProjectPath)
+		if err != nil {
+			resp["error"] = err.Error()
+			return
+		}
+		resp["success"] = true
+		resp["total"] = total
+		resp["done"] = done
 	default:
 		resp["error"] = "unknown action: " + req.Action
 		return

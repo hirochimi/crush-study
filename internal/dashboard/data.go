@@ -6,8 +6,10 @@ import (
 	"context"
 	"encoding/json"
 	"fmt"
+	"log/slog"
 	"os"
 	"os/exec"
+	"path/filepath"
 	"runtime"
 	"strings"
 	"time"
@@ -238,28 +240,95 @@ func DeleteSession(dataDir, sessionID string) error {
 	return nil
 }
 
-// ExportSession exports a session's conversation as a markdown file.
-func ExportSession(dataDir, sessionID, outputDir, projectPath string) error {
-	detail, err := GetSessionDetail(dataDir, sessionID)
+// DeleteAllSessions deletes all sessions of a project using the crush CLI.
+func DeleteAllSessions(dataDir string) error {
+	cmd := exec.Command("crush", "-D", dataDir, "session", "delete_all")
+	out, err := cmd.CombinedOutput()
 	if err != nil {
-		return fmt.Errorf("failed to get session detail: %w", err)
-	}
-
-	// Build filename: {snake_case_project}_{session_title}.md
-	projectName := snakeCase(projectPath)
-	title := sanitizeFilename(detail.Title)
-	filename := fmt.Sprintf("%s_%s.md", projectName, title)
-
-	// Ensure output directory exists
-	if err := os.MkdirAll(outputDir, 0o755); err != nil {
-		return fmt.Errorf("failed to create output directory: %w", err)
-	}
-
-	filePath := fmt.Sprintf("%s/%s", outputDir, filename)
-	if err := os.WriteFile(filePath, []byte(buildMarkdown(detail)), 0o644); err != nil {
-		return fmt.Errorf("failed to write markdown file: %w", err)
+		return fmt.Errorf("delete all failed: %w: %s", err, string(out))
 	}
 	return nil
+}
+
+// DeleteProject deletes all sessions of a project and unregisters the project.
+func DeleteProject(dataDir string) error {
+	if err := DeleteAllSessions(dataDir); err != nil {
+		return fmt.Errorf("delete all sessions failed: %w", err)
+	}
+	projList, err := projects.Load()
+	if err != nil {
+		return fmt.Errorf("failed to load projects: %w", err)
+	}
+	for _, p := range projList.Projects {
+		if p.DataDir == dataDir {
+			return projects.Unregister(p.Path)
+		}
+	}
+	return nil
+}
+
+// ExportSession exports a session's conversation as a markdown file.
+func ExportSession(dataDir, sessionID, outputDir, projectPath string) (string, error) {
+	detail, err := GetSessionDetail(dataDir, sessionID)
+	if err != nil {
+		return "", fmt.Errorf("failed to get session detail: %w", err)
+	}
+
+	_, filePath := buildExportFilename(projectPath, detail.Title, outputDir)
+	if err := os.WriteFile(filePath, []byte(buildMarkdown(detail)), 0o644); err != nil {
+		return "", fmt.Errorf("failed to write markdown file: %w", err)
+	}
+	return filepath.Base(filePath), nil
+}
+
+// buildExportFilename constructs the export file path, appending a timestamp
+// suffix if the filename already exists.
+func buildExportFilename(projectPath, title, outputDir string) (string, string) {
+	projectName := snakeCase(projectPath)
+	sanitized := sanitizeFilename(title)
+	filename := fmt.Sprintf("%s_%s.md", projectName, sanitized)
+	filePath := filepath.Join(outputDir, filename)
+
+	if _, err := os.Stat(filePath); err == nil {
+		// Filename exists, add timestamp.
+		ts := time.Now().UTC().Format("20060102_150405")
+		baseName := strings.TrimSuffix(filename, ".md")
+		filename = fmt.Sprintf("%s_%s.md", baseName, ts)
+		filePath = filepath.Join(outputDir, filename)
+	}
+
+	return filename, filePath
+}
+
+// ExportAllSessions exports all sessions of a project as markdown files.
+// Returns the total count, successfully exported count, and any error.
+func ExportAllSessions(dataDir, outputDir, projectPath string) (int, int, error) {
+	ctx := context.Background()
+	conn, err := db.Connect(ctx, dataDir)
+	if err != nil {
+		return 0, 0, err
+	}
+	defer func() { _ = db.Release(dataDir) }()
+
+	q := db.New(conn)
+	sessions, err := q.ListSessions(ctx)
+	if err != nil {
+		return 0, 0, fmt.Errorf("failed to list sessions: %w", err)
+	}
+
+	total := len(sessions)
+	done := 0
+
+	for _, s := range sessions {
+		sessionID := session.HashID(s.ID)
+		if _, err := ExportSession(dataDir, sessionID, outputDir, projectPath); err != nil {
+			slog.Warn("failed to export session", "session_id", s.ID, "error", err)
+			continue
+		}
+		done++
+	}
+
+	return total, done, nil
 }
 
 // sanitizeFilename removes characters that are invalid in file names.

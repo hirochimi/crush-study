@@ -109,6 +109,15 @@ func (q *Queries) GetLastAssistantMessageBySession(ctx context.Context, sessionI
 	return i, err
 }
 
+const deleteAllSessionMessages = `-- name: DeleteAllSessionMessages :exec
+DELETE FROM messages
+`
+
+func (q *Queries) DeleteAllSessionMessages(ctx context.Context) error {
+	_, err := q.exec(ctx, q.deleteAllSessionMessagesStmt, deleteAllSessionMessages)
+	return err
+}
+
 const getMessage = `-- name: GetMessage :one
 SELECT id, session_id, role, parts, model, created_at, updated_at, finished_at, provider, is_summary_message
 FROM messages

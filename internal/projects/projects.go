@@ -116,6 +116,22 @@ func Register(workingDir, dataDir string) error {
 	return Save(list)
 }
 
+// Unregister removes a project from the list.
+func Unregister(workingDir string) error {
+	list, err := Load()
+	if err != nil {
+		return err
+	}
+
+	for i, p := range list.Projects {
+		if p.Path == workingDir {
+			list.Projects = slices.Delete(list.Projects, i, i+1)
+			return Save(list)
+		}
+	}
+	return nil
+}
+
 // List returns all tracked projects sorted by last accessed.
 func List() ([]Project, error) {
 	list, err := Load()

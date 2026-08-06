@@ -85,6 +85,13 @@ var sessionRenameCmd = &cobra.Command{
 	RunE:  runSessionRename,
 }
 
+var sessionDeleteAllCmd = &cobra.Command{
+	Use:   "delete_all",
+	Short: "Delete all sessions",
+	Long:  "Delete all sessions, messages, and files.",
+	RunE:  runSessionDeleteAll,
+}
+
 func init() {
 	sessionListCmd.Flags().BoolVar(&sessionListJSON, "json", false, "output in JSON format")
 	sessionShowCmd.Flags().BoolVar(&sessionShowJSON, "json", false, "output in JSON format")
@@ -95,6 +102,7 @@ func init() {
 	sessionCmd.AddCommand(sessionShowCmd)
 	sessionCmd.AddCommand(sessionLastCmd)
 	sessionCmd.AddCommand(sessionDeleteCmd)
+	sessionCmd.AddCommand(sessionDeleteAllCmd)
 	sessionCmd.AddCommand(sessionRenameCmd)
 }
 
@@ -318,6 +326,23 @@ func runSessionDelete(cmd *cobra.Command, args []string) error {
 	}
 
 	fmt.Fprintf(out, "Deleted session %s\n", session.HashID(sess.ID)[:12])
+	return nil
+}
+
+func runSessionDeleteAll(cmd *cobra.Command, _ []string) error {
+	event.SetNonInteractive(true)
+
+	ctx, svc, cleanup, err := sessionSetup(cmd)
+	if err != nil {
+		return err
+	}
+	defer cleanup()
+
+	if err := svc.sessions.DeleteAllSessions(ctx); err != nil {
+		return fmt.Errorf("failed to delete all sessions: %w", err)
+	}
+
+	fmt.Fprintln(cmd.OutOrStdout(), "Deleted all sessions")
 	return nil
 }
 

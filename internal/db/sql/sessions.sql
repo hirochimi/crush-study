@@ -69,6 +69,10 @@ SET
     title = ?
 WHERE id = ?;
 
+-- name: DeleteAllSessions :exec
+DELETE FROM sessions
+WHERE parent_session_id IS NULL;
+
 -- name: DeleteSession :exec
 DELETE FROM sessions
 WHERE id = ?;

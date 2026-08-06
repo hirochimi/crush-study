@@ -641,6 +641,7 @@
   let projects = [];
   let selectedSession = null;
   let expandedFolders = new Set();
+  let exportAllInProgress = {};
 
   // DOM
   const treeContent = document.getElementById('tree-content');
@@ -757,6 +758,36 @@
       showToast('Exported successfully', 'success');
     } catch (e) {
       showToast(e.message, 'error');
+    }
+  }
+
+  async function exportAllSessions(pathId, projectPath, dataDir) {
+    if (!exportAllInProgress[pathId]) {
+      exportAllInProgress[pathId] = { active: false, total: 0, done: 0 };
+    }
+    const state = exportAllInProgress[pathId];
+    if (state.active) {
+      showToast('Export already in progress', 'info');
+      return;
+    }
+
+    try {
+      state.active = true;
+      showToast('Exporting all sessions...', 'info');
+      const res = await fetch(`/api/command`, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ action: 'export_all', dataDir, projectPath })
+      });
+      if (!res.ok) throw new Error(`HTTP ${res.status}`);
+      const data = await res.json();
+      if (data.error) throw new Error(data.error);
+      state.done = data.total || 0;
+      showToast(`Exported ${data.done || 0}/${data.total || 0} sessions`, 'success');
+    } catch (e) {
+      showToast(e.message, 'error');
+    } finally {
+      state.active = false;
     }
   }
 
@@ -1003,10 +1034,22 @@
         hideContextMenu();
         actionCommand('open_new', '', path, '');
       });
+      addMenuItem(menu, '📥', 'Export All', () => {
+        hideContextMenu();
+        exportAllSessions(pathId, path, node.dataset.dir || path);
+      });
+      addMenuItem(menu, '🗑️', 'Delete Project', () => {
+        hideContextMenu();
+        handleDeleteProject(node);
+      });
       addMenuItem(menu, '⚙️', 'Project Info', () => {
         hideContextMenu();
         showToast('Project info coming soon', 'info');
       }, true);
+      addMenuItem(menu, '🗑️', 'Delete All Sessions', () => {
+        hideContextMenu();
+        handleDeleteAllSessions(node);
+      });
     } else if (type === 'session') {
       addMenuItem(menu, '🚀', 'Open Session', () => {
         hideContextMenu();
@@ -1071,6 +1114,24 @@
   function handleDelete(sessionId, dataDir) {
     if (confirm('Delete this session? This cannot be undone.')) {
       actionCommand('delete', sessionId, dataDir, '');
+    }
+  }
+
+  // Delete Project
+  function handleDeleteProject(node) {
+    const dataDir = node.dataset.dir || node.dataset.path;
+    const path = node.dataset.path;
+    if (confirm(`Delete project "${path}" and all its sessions? This cannot be undone.`)) {
+      actionCommand('delete_project', '', dataDir, '');
+    }
+  }
+
+  // Delete all sessions in a project
+  function handleDeleteAllSessions(node) {
+    const dataDir = node.dataset.dir || node.dataset.path;
+    const path = node.dataset.path;
+    if (confirm(`Delete all sessions in "${path}"? This cannot be undone.`)) {
+      actionCommand('delete_all', '', dataDir, path);
     }
   }
 
