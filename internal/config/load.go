@@ -447,6 +447,16 @@ func (c *Config) configureProviders(ctx context.Context, store *ConfigStore, env
 			continue
 		}
 
+		// Apply provider-level SupportsImages to user-specified models
+		// (enrichers only touch discovered models). This ensures the flag
+		// works for both custom enrichers and the default openai-compat
+		// path where no enricher runs.
+		if providerConfig.SupportsImages {
+			for i := range providerConfig.Models {
+				providerConfig.Models[i].SupportsImages = true
+			}
+		}
+
 		if providerConfig.Disable {
 			slog.Debug("Skipping custom provider due to disable flag", "provider", id)
 			c.Providers.Del(id)

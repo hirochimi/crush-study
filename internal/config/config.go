@@ -144,6 +144,11 @@ type ProviderConfig struct {
 	// only explicitly listed models are used.
 	AutoDiscoverModels *bool `json:"discover_models,omitempty" jsonschema:"description=Auto-discover models from /v1/models endpoint. When true with existing models they are merged (yours win),default=true"`
 
+	// SupportsImages indicates that models in this provider support
+	// image input (vision / multimodal). Useful for local servers like
+	// llama.cpp that don't expose vision capability via their API.
+	SupportsImages bool `json:"supports_images,omitempty" jsonschema:"description=Whether models in this provider support image input (vision/multimodal)"`
+
 	// The provider models
 	Models []catwalk.Model `json:"models,omitempty" jsonschema:"description=List of models available from this provider"`
 }
