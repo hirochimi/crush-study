@@ -266,10 +266,10 @@ if [[ $HOSTNAME == "babysquid" ]]; then
     source ~/my-stuff/babysquid.sh
 fi
 
-# Add an MCP server, with a GitHub API token stored in 1password.
+# Add an MCP server, with a GitHub API token stored in 1Password.
 mcp add github \
   --type http \
-  --url "https://api.githubcopilot.com/mcp/" \
+  --url "https://api.github.com/mcp/" \
   --header Authorization "Bearer $(op read 'op://my-secret-key')"
 ```
 
@@ -364,7 +364,7 @@ mcp add filesystem --command node --args /path/to/mcp-server.js \
   --timeout 10 --disabled-tools some-tool-name --env NODE_ENV production
 
 # Add a GitHub MCP server that uses an API token.
-mcp add github --type http --url "https://api.githubcopilot.com/mcp/" \
+mcp add github --type http --url https://api.github.com/mcp/ \
   --timeout 10 --header Authorization "Bearer $GH_PAT" \
   --disabled-tools create_issue --disabled-tools create_pull_request
 
@@ -373,6 +373,63 @@ mcp add streaming-service --type sse --url "https://example.com/mcp/sse" \
   --timeout 10 --header API-Key "$API_KEY"
 ```
 
+#### MCP OAuth
+
+HTTP and SSE MCP servers that require OAuth can use Crush's built-in
+authorization-code flow instead of a static `Authorization` header. Set
+`"oauth": true` to enable it:
+
+```json
+{
+  "mcp": {
+    "linear": {
+      "type": "http",
+      "url": "https://mcp.linear.app/mcp",
+      "oauth": true
+    }
+  }
+}
+```
+
+##### Pre-registered clients
+
+Some servers (GitHub, Slack) don't support dynamic client registration.
+For those, register an OAuth app with the provider and supply the
+credentials directly. All values support shell expansion:
+
+```json
+{
+  "mcp": {
+    "github": {
+      "type": "http",
+      "url": "https://api.github.com/mcp/",
+      "oauth": true,
+      "oauth_client_id": "Iv1.abc123def456",
+      "oauth_client_secret": "$GITHUB_MCP_SECRET",
+      "oauth_callback_port": 40704
+    }
+  }
+}
+```
+
+When `oauth_client_id` is set, Crush skips dynamic client registration
+and authenticates as the specified client. When omitted, Crush attempts
+dynamic registration automatically (works with Linear, Notion, and other
+servers that support RFC 7591).
+
+#### Sessionless servers
+
+Some HTTP MCP servers are sessionless — they never issue a
+`Mcp-Session-Id` and reject the `subscriptions/listen` stream Crush opens
+for list-changed notifications, which would otherwise break the
+connection. Crush auto-detects known sessionless servers (GitHub MCP,
+`api.githubcopilot.com/mcp`), so those need no extra configuration.
+
+For other sessionless servers, mark them explicitly with
+`"sessionless": true` (or `--sessionless true` in `crushrc`); set it to
+`false` to force the default behavior for an auto-detected URL. The
+tradeoff is that a sessionless server won't push live
+tool/prompt/resource list-changed notifications.
 ### Hooks
 
 Crush has preliminary support for hooks. For details, see
