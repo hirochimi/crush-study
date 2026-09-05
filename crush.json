@@ -67,6 +67,12 @@
     }
   },
   "mcp": {
+    "context7": {
+      "type": "stdio",
+      "command": "npx",
+      "args": ["-y", "@upstash/context7-mcp"],
+      "timeout": 60
+    },
     "filesystem": {
       "type": "stdio",
       "command": "npx",
