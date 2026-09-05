@@ -2,6 +2,7 @@
   "$schema": "https://charm.land/crush.json",
   "lsp": {
     "gopls": {
+      "command": "gopls",
       "options": {
         "gofumpt": true,
         "codelenses": {
@@ -35,6 +36,86 @@
         ],
         "semanticTokens": true
       }
+    },
+    "typescript": {
+      "command": "typescript-language-server",
+      "args": ["--stdio"],
+      "filetypes": ["typescript", "typescriptreact", "javascript", "javascriptreact"]
+    },
+    "eslint": {
+      "command": "vscode-eslint-language-server",
+      "args": ["--stdio"],
+      "filetypes": ["typescript", "typescriptreact", "javascript", "javascriptreact"]
+    },
+    "pyright": {
+      "command": "pyright-langserver",
+      "args": ["--stdio"],
+      "filetypes": ["python"]
+    },
+    "ruff": {
+      "command": "ruff",
+      "args": ["server"],
+      "filetypes": ["python"]
+    },
+    "kotlin_language_server": {
+      "command": "kotlin-language-server",
+      "filetypes": ["kotlin"]
+    },
+    "jdtls": {
+      "command": "jdtls",
+      "filetypes": ["java"]
+    }
+  },
+  "mcp": {
+    "filesystem": {
+      "type": "stdio",
+      "command": "npx",
+      "args": ["-y", "@modelcontextprotocol/server-filesystem", "${workspaceFolder}"],
+      "disabled": false
+    },
+    "github": {
+      "type": "http",
+      "url": "https://api.githubcopilot.com/mcp/",
+      "headers": {
+        "Authorization": "Bearer ${GH_TOKEN}"
+      },
+      "disabled": false
+    },
+    "playwright": {
+      "type": "stdio",
+      "command": "npx",
+      "args": ["-y", "@executeautomation/playwright-mcp-server"],
+      "disabled": false
+    },
+    "postgres": {
+      "type": "stdio",
+      "command": "npx",
+      "args": ["-y", "@modelcontextprotocol/server-postgres", "${DATABASE_URL}"],
+      "disabled": true
+    },
+    "sqlite": {
+      "type": "stdio",
+      "command": "npx",
+      "args": ["-y", "@modelcontextprotocol/server-sqlite", "${workspaceFolder}/data.db"],
+      "disabled": true
+    },
+    "android_sdk": {
+      "type": "stdio",
+      "command": "npx",
+      "args": ["-y", "@modelcontextprotocol/server-android-sdk"],
+      "disabled": true
+    },
+    "gradle": {
+      "type": "stdio",
+      "command": "npx",
+      "args": ["-y", "@modelcontextprotocol/server-gradle"],
+      "disabled": true
+    }
+  },
+  "options": {
+    "auto_lsp": true,
+    "tui": {
+      "diff_mode": "unified"
     }
   }
 }
