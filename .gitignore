@@ -55,3 +55,7 @@ completions/crush.*sh
 .prettierignore
 .task
 crush.db
+
+# MCP Memory server data
+.mcp_memory/
+memory/
