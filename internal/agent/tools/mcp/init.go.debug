@@ -1,0 +1,18 @@
+package mcp
+
+import (
+    "fmt"
+    "github.com/charmbracelet/crush/internal/config"
+)
+
+func debugMCPConfig(cfg *config.ConfigStore) {
+    c := cfg.Config()
+    for name, mcp := range c.MCP {
+        fmt.Printf("DEBUG MCP: %s\n", name)
+        fmt.Printf("  Type: %s\n", mcp.Type)
+        fmt.Printf("  Command: %s\n", mcp.Command)
+        fmt.Printf("  Args: %v\n", mcp.Args)
+        fmt.Printf("  Disabled: %v\n", mcp.Disabled)
+        fmt.Printf("  Timeout: %v\n", mcp.Timeout)
+    }
+}

@@ -220,7 +220,7 @@ func GetSessionDetail(dataDir, sessionID string) (*SessionDetail, error) {
 
 // RenameSession renames a session using the crush CLI.
 func RenameSession(dataDir, sessionID, newTitle string) error {
-	cmd := exec.Command("crush", "-D", dataDir, "session", "rename", sessionID, newTitle)
+	cmd := exec.Command(crushBinaryPath(), "-D", dataDir, "session", "rename", sessionID, newTitle)
 	out, err := cmd.CombinedOutput()
 	if err != nil {
 		return fmt.Errorf("rename failed: %w: %s", err, string(out))
@@ -230,12 +230,25 @@ func RenameSession(dataDir, sessionID, newTitle string) error {
 
 // DeleteSession deletes a session using the crush CLI.
 func DeleteSession(dataDir, sessionID string) error {
-	cmd := exec.Command("crush", "-D", dataDir, "session", "delete", sessionID)
+	cmd := exec.Command(crushBinaryPath(), "-D", dataDir, "session", "delete", sessionID)
 	out, err := cmd.CombinedOutput()
 	if err != nil {
 		return fmt.Errorf("delete failed: %w: %s", err, string(out))
 	}
 	return nil
+}
+
+// crushBinaryPath returns the path to the crush binary.
+// It uses os.Args[0] when running as a built binary, or falls back to "crush" in PATH.
+func crushBinaryPath() string {
+	if len(os.Args) > 0 && os.Args[0] != "" {
+		// Check if os.Args[0] is a real binary path (not a temp path from "go run")
+		path := os.Args[0]
+		if _, err := os.Stat(path); err == nil {
+			return path
+		}
+	}
+	return "crush"
 }
 
 // OpenTerminal opens an external terminal emulator at the given directory.

@@ -299,6 +299,11 @@ func Initialize(ctx context.Context, permissions permission.Service, cfg *config
 	slog.Info("Initializing MCP clients")
 	start := time.Now()
 
+	// DEBUG: Log effective MCP config
+	for name, m := range cfg.Config().MCP {
+		slog.Info("Effective MCP config", "name", name, "command", m.Command, "args", m.Args, "disabled", m.Disabled, "timeout", m.Timeout)
+	}
+
 	var wg sync.WaitGroup
 	// Initialize states for all configured MCPs
 	for name, m := range cfg.Config().MCP {
