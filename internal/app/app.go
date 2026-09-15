@@ -264,7 +264,7 @@ func (app *App) resolveSession(ctx context.Context, continueSessionID string, us
 
 // RunNonInteractive runs the application in non-interactive mode with the
 // given prompt, printing to stdout.
-func (app *App) RunNonInteractive(ctx context.Context, output io.Writer, prompt, largeModel, smallModel string, hideSpinner bool, continueSessionID string, useLast bool) error {
+func (app *App) RunNonInteractive(ctx context.Context, output io.Writer, prompt, largeModel, smallModel, reasoningEffort string, hideSpinner bool, continueSessionID string, useLast bool) error {
 	slog.Info("Running in non-interactive mode")
 
 	// Re-initialize the coder agent without interactive-only tools.
@@ -278,6 +278,17 @@ func (app *App) RunNonInteractive(ctx context.Context, output io.Writer, prompt,
 	if largeModel != "" || smallModel != "" {
 		if err := app.overrideModelsForNonInteractive(ctx, largeModel, smallModel); err != nil {
 			return fmt.Errorf("failed to override models: %w", err)
+		}
+	}
+
+	// The reasoning effort applies to the model that will actually run.
+	// On a continued session without an explicit model override, the
+	// model is resolved later from the session's last assistant message,
+	// so the override is applied after that restore instead.
+	deferredEffort := (continueSessionID != "" || useLast) && largeModel == "" && smallModel == ""
+	if reasoningEffort != "" && !deferredEffort {
+		if err := app.overrideReasoningEffort(ctx, reasoningEffort); err != nil {
+			return err
 		}
 	}
 
@@ -345,6 +356,12 @@ func (app *App) RunNonInteractive(ctx context.Context, output io.Writer, prompt,
 		}
 	} else {
 		slog.Info("Created session for non-interactive run", "session_id", sess.ID)
+	}
+
+	if reasoningEffort != "" && deferredEffort {
+		if err := app.overrideReasoningEffort(ctx, reasoningEffort); err != nil {
+			return err
+		}
 	}
 
 	// Automatically approve all permission requests for this non-interactive
@@ -547,6 +564,28 @@ func (app *App) overrideModelsForNonInteractive(ctx context.Context, largeModel,
 	return app.AgentCoordinator.UpdateModels(ctx)
 }
 
+// overrideReasoningEffort validates the requested reasoning effort against
+// the large model in effect for this run (which may have been overridden by
+// --model or restored from a continued session) and applies it as an
+// in-memory override.
+func (app *App) overrideReasoningEffort(ctx context.Context, reasoningEffort string) error {
+	cfg := app.config.Config()
+	selected, ok := cfg.Models[config.SelectedModelTypeLarge]
+	if !ok {
+		return fmt.Errorf("no large model selected; set one with the --model flag or 'model large'")
+	}
+	if err := cfg.ValidateReasoningEffort(selected.Provider, selected.Model, reasoningEffort); err != nil {
+		return err
+	}
+	selected.ReasoningEffort = reasoningEffort
+	slog.Info("Overriding reasoning effort for non-interactive run",
+		"provider", selected.Provider,
+		"model", selected.Model,
+		"reasoning_effort", reasoningEffort)
+	app.config.OverridePreferredModel(config.SelectedModelTypeLarge, selected)
+	return app.AgentCoordinator.UpdateModels(ctx)
+}
+
 // GetDefaultSmallModel returns the default small model for the given
 // provider. Falls back to the large model if no default is found.
 func (app *App) GetDefaultSmallModel(providerID string) config.SelectedModel {
@@ -576,6 +615,23 @@ func (app *App) GetDefaultSmallModel(providerID string) config.SelectedModel {
 		return largeModelCfg
 	}
 
+	// A ChatGPT-authenticated OpenAI provider only serves the models the
+	// subscription grants, so the default small model must come from that
+	// catalog as well.
+	if providerID == string(catwalk.InferenceProviderOpenAI) && largeModelCfg.Provider == providerID {
+		if pc, ok := cfg.Providers.Get(providerID); ok && pc.OAuthToken != nil {
+			if small := chatGPTSmallModel(pc); small != nil {
+				return config.SelectedModel{
+					Provider:        providerID,
+					Model:           small.ID,
+					MaxTokens:       small.DefaultMaxTokens,
+					ReasoningEffort: small.DefaultReasoningEffort,
+				}
+			}
+			return largeModelCfg
+		}
+	}
+
 	slog.Info("Using provider default small model", "provider", providerID, "model", defaultSmallModelID)
 	return config.SelectedModel{
 		Provider:        providerID,
@@ -583,6 +639,22 @@ func (app *App) GetDefaultSmallModel(providerID string) config.SelectedModel {
 		MaxTokens:       model.DefaultMaxTokens,
 		ReasoningEffort: model.DefaultReasoningEffort,
 	}
+}
+
+// chatGPTSmallModel picks a lightweight model from the ChatGPT catalog,
+// preferring a "mini" variant and falling back to the last entry (the
+// catalog lists heavier models first). Returns nil when the catalog is
+// empty.
+func chatGPTSmallModel(pc config.ProviderConfig) *catwalk.Model {
+	for i := range pc.ChatGPTModels {
+		if strings.Contains(pc.ChatGPTModels[i].ID, "mini") {
+			return &pc.ChatGPTModels[i]
+		}
+	}
+	if len(pc.ChatGPTModels) > 0 {
+		return &pc.ChatGPTModels[len(pc.ChatGPTModels)-1]
+	}
+	return nil
 }
 
 func (app *App) setupEvents() {
