@@ -1,0 +1,9 @@
+#!/usr/bin/env bash
+# Global Crush configuration
+
+# Set default models (persists across all directories)
+model large openrouter/nvidia/nemotron-3-ultra-550b-a55b:free
+model small openrouter/nvidia/nemotron-3-nano-omni-30b-a3b-reasoning:free
+
+# MCP Memory Server for this project
+mcp add memory --type stdio --command /home/fx/.local/share/crush/mcp-memory/run.sh
