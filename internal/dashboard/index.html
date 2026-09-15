@@ -467,6 +467,45 @@
     padding: 40px;
     font-size: 13px;
   }
+
+  /* Copy button */
+  .message-body {
+    position: relative;
+  }
+  .copy-btn {
+    position: absolute;
+    top: 8px;
+    right: 8px;
+    width: 28px;
+    height: 28px;
+    border: none;
+    border-radius: var(--radius);
+    background: var(--bg-tertiary);
+    color: var(--fg-secondary);
+    cursor: pointer;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    font-size: 13px;
+    opacity: 0;
+    transition: all 0.15s ease;
+    z-index: 10;
+  }
+  .message-body:hover .copy-btn {
+    opacity: 1;
+  }
+  .copy-btn:hover {
+    background: var(--bg-hover);
+    color: var(--fg-bright);
+  }
+  .copy-btn.copied {
+    color: var(--green);
+    opacity: 1;
+  }
+  .copy-btn svg {
+    width: 16px;
+    height: 16px;
+  }
 </style>
 </head>
 <body>
@@ -681,6 +720,27 @@
         body.classList.toggle('expanded');
       });
     });
+
+    // Copy button events
+    chatView.querySelectorAll('.copy-btn').forEach(btn => {
+      btn.addEventListener('click', function(e) {
+        e.stopPropagation();
+        const messageBody = this.closest('.message-body');
+        const text = messageBody?.dataset?.fullText || '';
+        if (text) {
+          navigator.clipboard.writeText(text).then(() => {
+            this.classList.add('copied');
+            this.innerHTML = `<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><polyline points="20 6 9 17 4 12"></polyline></svg>`;
+            setTimeout(() => {
+              this.classList.remove('copied');
+              this.innerHTML = `<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><rect x="9" y="9" width="13" height="13" rx="2" ry="2"></rect><path d="M5 15H4a2 2 0 0 1-2-2V4a2 2 0 0 1 2-2h9a2 2 0 0 1 2 2v1"></path></svg>`;
+            }, 1500);
+          }).catch(() => {
+            showToast('Failed to copy', 'error');
+          });
+        }
+      });
+    });
   }
 
   function renderMessage(msg) {
@@ -689,6 +749,21 @@
     const model = msg.model || msg.Model || '';
     const provider = msg.provider || msg.Provider || '';
     const time = msg.created_at || msg.CreatedAt || '';
+
+    // Extract all text content from parts for copy button
+    let fullText = '';
+    for (const part of parts) {
+      if (part.type === 'text' && part.text) {
+        fullText += part.text + '\n';
+      } else if (part.type === 'reasoning' && part.thinking) {
+        fullText += '[Reasoning]\n' + part.thinking + '\n';
+      } else if (part.type === 'tool_call' && part.name) {
+        fullText += '[Tool: ' + part.name + ']\n' + (part.input || '') + '\n';
+      } else if (part.type === 'tool_result' && part.name) {
+        fullText += '[Tool Result: ' + part.name + ']\n' + (part.content || '') + '\n';
+      }
+    }
+    fullText = fullText.trim();
 
     let html = `<div class="message ${role}">`;
 
@@ -701,7 +776,12 @@
     if (time) html += `<div class="message-header" style="margin-top:-4px;margin-bottom:4px;"><span class="message-time">${formatDate(time)}</span></div>`;
 
     // Body
-    html += `<div class="message-body">`;
+    html += `<div class="message-body" data-full-text="${esc(fullText)}">`;
+    if (fullText) {
+      html += `<button class="copy-btn" type="button" aria-label="Copy message" title="Copy message">
+        <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><rect x="9" y="9" width="13" height="13" rx="2" ry="2"></rect><path d="M5 15H4a2 2 0 0 1-2-2V4a2 2 0 0 1 2-2h9a2 2 0 0 1 2 2v1"></path></svg>
+      </button>`;
+    }
     for (const part of parts) {
       html += renderPart(part);
     }
