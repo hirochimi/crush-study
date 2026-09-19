@@ -1,0 +1,28 @@
+#!/usr/bin/env bash
+# clangd wrapper: auto-generates compile_commands.json via cmake if missing
+
+set -e
+
+# Find project root (where CMakeLists.txt exists)
+find_project_root() {
+    local dir="$PWD"
+    while [[ "$dir" != "/" ]]; do
+        if [[ -f "$dir/CMakeLists.txt" ]]; then
+            echo "$dir"
+            return 0
+        fi
+        dir=$(dirname "$dir")
+    done
+    echo "$PWD"
+}
+
+PROJECT_ROOT=$(find_project_root)
+COMPILE_COMMANDS="$PROJECT_ROOT/compile_commands.json"
+
+# Generate compile_commands.json if missing but CMakeLists.txt exists
+if [[ ! -f "$COMPILE_COMMANDS" ]] && [[ -f "$PROJECT_ROOT/CMakeLists.txt" ]]; then
+    echo "Generating compile_commands.json via cmake..." >&2
+    (cd "$PROJECT_ROOT" && cmake -DCMAKE_EXPORT_COMPILE_COMMANDS=ON . >&2)
+fi
+
+exec clangd "$@"

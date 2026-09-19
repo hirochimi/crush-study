@@ -7,3 +7,7 @@ model small openrouter/nvidia/nemotron-3-nano-omni-30b-a3b-reasoning:free
 
 # MCP Memory Server for this project
 mcp add memory --type stdio --command /home/fx/.local/share/crush/mcp-memory/run.sh
+
+# clangd LSP with auto compile_commands.json generation via cmake
+# Uses wrapper script that runs cmake if compile_commands.json is missing
+lsp add clangd --command ./scripts/clangd-wrapper --filetypes c --filetypes cpp
