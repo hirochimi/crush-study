@@ -197,6 +197,13 @@ func (w *ClientWorkspace) SetCurrentSession(ctx context.Context, sessionID strin
 	return w.client.SetCurrentSession(ctx, w.workspaceID(), sessionID)
 }
 
+// RoutesChannelEvents reports true: the server backend injects each
+// channel event exactly once (see backend.startChannelRouter), so this
+// client must not inject on EventChannelMessage — with several clients
+// attached, per-client injection would run the same event multiple
+// times, and it would never run with zero clients attached.
+func (w *ClientWorkspace) RoutesChannelEvents() bool { return true }
+
 // -- Messages --
 
 func (w *ClientWorkspace) ListMessages(ctx context.Context, sessionID string) ([]message.Message, error) {
@@ -230,7 +237,11 @@ func (w *ClientWorkspace) AgentRun(ctx context.Context, sessionID, prompt string
 	// completion detection (it observes message events directly),
 	// so passing an empty RunID is correct here: it skips the
 	// correlator stamping path without functional consequences.
-	return w.client.SendMessage(ctx, w.workspaceID(), sessionID, "", prompt, attachments...)
+	return w.client.SendMessage(ctx, w.workspaceID(), sessionID, "", "", prompt, attachments...)
+}
+
+func (w *ClientWorkspace) AgentRunChannel(ctx context.Context, channel, sessionID, prompt string, attachments ...message.Attachment) error {
+	return w.client.SendMessage(ctx, w.workspaceID(), sessionID, "", channel, prompt, attachments...)
 }
 
 func (w *ClientWorkspace) AgentRunShellCommand(ctx context.Context, sessionID, command string, termWidth int, _ func(string), _ bool) (proto.ShellCommandResponse, error) {
@@ -528,6 +539,13 @@ func (w *ClientWorkspace) WorkingDir() string {
 	return w.cached().Path
 }
 
+// GitBranch asks the server for the branch checked out in the workspace's
+// working directory. Callers keep this off the render path; the TUI polls it
+// on a ticker and renders from its own state.
+func (w *ClientWorkspace) GitBranch(ctx context.Context) (string, error) {
+	return w.client.GitBranch(ctx, w.workspaceID())
+}
+
 func (w *ClientWorkspace) Resolver() config.VariableResolver {
 	return config.IdentityResolver()
 }
@@ -564,6 +582,15 @@ func (w *ClientWorkspace) SetConfigField(scope config.Scope, key string, value a
 		w.refreshWorkspace()
 	}
 	return err
+}
+
+func (w *ClientWorkspace) SetConfigFields(scope config.Scope, fields map[string]any) error {
+	for key, value := range fields {
+		if err := w.SetConfigField(scope, key, value); err != nil {
+			return err
+		}
+	}
+	return nil
 }
 
 func (w *ClientWorkspace) RemoveConfigField(scope config.Scope, key string) error {
@@ -658,6 +685,7 @@ func (w *ClientWorkspace) MCPGetStates() map[string]mcp.ClientInfo {
 				Resources: v.ResourceCount,
 			},
 			ConnectedAt: v.ConnectedAt,
+			Channel:     v.Channel,
 		}
 	}
 	return result
@@ -730,6 +758,26 @@ func (w *ClientWorkspace) EnableDockerMCP(ctx context.Context) error {
 
 func (w *ClientWorkspace) DisableDockerMCP() error {
 	return w.client.DisableDockerMCP(context.Background(), w.workspaceID())
+}
+
+func (w *ClientWorkspace) MCPServersDisabled(ctx context.Context) ([]string, error) {
+	return w.client.MCPServersDisabled(ctx, w.workspaceID())
+}
+
+func (w *ClientWorkspace) MCPServersEnabled(ctx context.Context) ([]string, error) {
+	return w.client.MCPServersEnabled(ctx, w.workspaceID())
+}
+
+func (w *ClientWorkspace) MCPSetServerDisabled(ctx context.Context, name string, disabled bool) error {
+	return w.client.SetMCPServerDisabled(ctx, w.workspaceID(), name, disabled)
+}
+
+func (w *ClientWorkspace) MCPSetServerConfigDisabled(ctx context.Context, name string, disabled bool) error {
+	return w.client.SetMCPServerConfigDisabled(ctx, w.workspaceID(), name, disabled)
+}
+
+func (w *ClientWorkspace) MCPStartServer(ctx context.Context, name string) error {
+	return w.client.StartMCPServer(ctx, w.workspaceID(), name)
 }
 
 func (w *ClientWorkspace) MCPAuthenticate(ctx context.Context, name string) error {
@@ -1101,6 +1149,7 @@ func (w *ClientWorkspace) translateEvent(ev any) tea.Msg {
 					Prompts:   e.Payload.PromptCount,
 					Resources: e.Payload.ResourceCount,
 				},
+				ChannelMessage: e.Payload.ChannelMessage,
 			},
 		}
 	case pubsub.Event[proto.PermissionRequest]:
@@ -1225,6 +1274,8 @@ func protoToMCPEventType(t proto.MCPEventType) mcp.EventType {
 		return mcp.EventPromptsListChanged
 	case proto.MCPEventResourcesListChanged:
 		return mcp.EventResourcesListChanged
+	case proto.MCPEventChannelMessage:
+		return mcp.EventChannelMessage
 	default:
 		return mcp.EventStateChanged
 	}
@@ -1248,6 +1299,7 @@ func protoToSession(s proto.Session) session.Session {
 		CompletionTokens: s.CompletionTokens,
 		Cost:             s.Cost,
 		Todos:            protoToTodos(s.Todos),
+		Channel:          s.Channel,
 		CreatedAt:        s.CreatedAt,
 		UpdatedAt:        s.UpdatedAt,
 	}
@@ -1374,6 +1426,7 @@ func sessionToProto(s session.Session) proto.Session {
 		CompletionTokens: s.CompletionTokens,
 		Cost:             s.Cost,
 		Todos:            todosToProto(s.Todos),
+		Channel:          s.Channel,
 		CreatedAt:        s.CreatedAt,
 		UpdatedAt:        s.UpdatedAt,
 	}
