@@ -1,0 +1,132 @@
+#!/usr/bin/env bash
+# Google Cloud Developer Plugin for Crush
+# ========================================
+# This crushrc snippet provides equivalent functionality to the official
+# Google Cloud Developer Plugin (https://github.com/google/skills/plugins/cloud/google-cloud-developer)
+# for AI coding agents, adapted for Crush's native configuration system.
+#
+# INSTALLATION:
+#   1. Copy this file to your project root as .crushrc.local
+#      OR append to your global ~/.config/crush/crushrc
+#   2. Set DEVELOPERKNOWLEDGE_API_KEY environment variable (see PREREQUISITES)
+#   3. Restart Crush
+#
+# PREREQUISITES:
+#   - Google Cloud project with billing enabled
+#   - Enable API: gcloud services enable developerknowledge.googleapis.com --project=<PROJECT_ID>
+#   - Create API key: https://developers.google.com/knowledge/quickstart#create-secure-key
+#   - export DEVELOPERKNOWLEDGE_API_KEY="your-api-key-here"
+#
+# FEATURES ENABLED:
+#   ✅ Live Google Cloud documentation via Developer Knowledge MCP
+#   ✅ gcloud CLI safety guardrails
+#   ✅ Authentication & onboarding best practices
+#   ✅ Skill discovery for specialized GCP products (GKE, Cloud Run, etc.)
+#   ✅ Progressive disclosure - specialized skills suggested when needed
+
+# ============================================================
+# 1. MCP SERVER: Developer Knowledge (Live Documentation)
+# ============================================================
+# Provides up-to-date official Google Cloud documentation to the agent
+# via streamable HTTP MCP with API key authentication.
+mcp add developer-knowledge \
+  --type http \
+  --url "https://developerknowledge.googleapis.com/mcp" \
+  --header "X-Goog-Api-Key" "${DEVELOPERKNOWLEDGE_API_KEY}" \
+  --timeout 30
+
+# ============================================================
+# 2. SKILLS: Core Google Cloud Capabilities
+# ============================================================
+# Place SKILL.md files in ~/.config/crush/skills/google-cloud-*/
+# or project-local .crush/skills/google-cloud-*/
+# Directory structure expected:
+#   ~/.config/crush/skills/
+#   ├── google-cloud-recipe-auth/SKILL.md
+#   ├── google-cloud-recipe-onboarding/SKILL.md
+#   ├── gcloud/SKILL.md
+#   ├── finding-google-skills/SKILL.md
+#   └── retrieving-developer-knowledge/SKILL.md
+#
+# Skill source: https://github.com/google/skills/plugins/cloud/google-cloud-developer/skills/
+
+# Load all Google Cloud skills (auto-discovered from skills paths)
+# The skill names must match the SKILL.md 'name' field
+skill load google-cloud-recipe-auth
+skill load google-cloud-recipe-onboarding
+skill load gcloud
+skill load finding-google-skills
+skill load retrieving-developer-knowledge
+
+# ============================================================
+# 3. HOOKS: Safety Guardrails & Progressive Disclosure
+# ============================================================
+
+# --- 3a. gcloud Command Validation (PreToolUse) ---
+# Intercepts bash tool calls matching 'gcloud *' and validates
+# against safety rules before execution.
+hook add PreToolUse gcloud-guardrail \
+  --command "crush-gcloud-validate" \
+  --match-tool "bash" \
+  --match-pattern "gcloud *"
+
+# --- 3b. Progressive Skill Discovery (PreToolUse) ---
+# When agent uses gcloud for specific products, suggest specialized skills
+hook add PreToolUse gcloud-skill-discovery \
+  --command "crush-gcloud-suggest-skills" \
+  --match-tool "bash" \
+  --match-pattern "gcloud *"
+
+# ============================================================
+# 4. ENVIRONMENT & OPTIONS
+# ============================================================
+
+# Required: API key for Developer Knowledge MCP
+# Set in your shell profile (.bashrc, .zshrc) or CI/CD secrets:
+#   export DEVELOPERKNOWLEDGE_API_KEY="your-key"
+options set env.DEVELOPERKNOWLEDGE_API_KEY "${DEVELOPERKNOWLEDGE_API_KEY}"
+
+# Optional: Default Google Cloud project (avoids repeated --project flag)
+# options set env.CLOUDSDK_CORE_PROJECT "your-project-id"
+
+# Optional: Default region/zone
+# options set env.CLOUDSDK_COMPUTE_REGION "us-central1"
+# options set env.CLOUDSDK_COMPUTE_ZONE "us-central1-a"
+
+# ============================================================
+# 5. PERMISSIONS: Allowlisted Tools
+# ============================================================
+# Grant auto-approval for safe Google Cloud read operations
+permissions allow "gcloud compute instances list"
+permissions allow "gcloud projects describe"
+permissions allow "gcloud services list"
+permissions allow "gcloud auth list"
+permissions allow "gcloud config list"
+
+# Require confirmation for mutating operations (default behavior)
+# permissions deny "gcloud compute instances delete"
+# permissions deny "gcloud projects delete"
+
+# ============================================================
+# 6. ALIASES & SHORTCUTS (Optional Convenience)
+# ============================================================
+# Quick access to common Google Cloud workflows
+alias gcp-onboard="crush run 'Set up my first Google Cloud project with billing and authentication'"
+alias gcp-auth="crush run 'Configure application default credentials for local development'"
+alias gcp-skills="crush run 'List all available Google Cloud specialized skills'"
+
+# ============================================================
+# VERIFICATION
+# ============================================================
+# After setup, verify in Crush:
+#   > crush info
+#   Should show: [mcp] developer-knowledge = connected
+#                [skills] google-cloud-* loaded
+#   > /mcp developer-knowledge tools
+#   Should list search_documentation, etc.
+
+# Test query:
+#   > crush run "What's the latest Cloud Run deployment best practice?"
+#   Agent should use Developer Knowledge MCP to fetch current docs
+
+# EOF

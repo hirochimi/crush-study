@@ -465,3 +465,45 @@ overrides), then wire it into `ThemeForProvider`.
 - **LSP diagnostics callback**: The LSP manager's callback system
   (`app.LSPManager.SetCallback`) is used to propagate state and
   diagnostics to the UI. Set this callback in `app.New`.
+- **Google Cloud Developer Plugin**: Crush supports the official
+  [Google Cloud Developer Plugin](https://github.com/google/skills/plugins/cloud/google-cloud-developer)
+  via its native MCP, Skills, and Hooks infrastructure. The plugin provides:
+  - **Developer Knowledge MCP Server**: Live Google Cloud documentation at
+    `https://developerknowledge.googleapis.com/mcp` (requires `DEVELOPERKNOWLEDGE_API_KEY`
+    env var and `developerknowledge.googleapis.com` API enabled).
+  - **5 Core Skills**: `google-cloud-recipe-auth`, `google-cloud-recipe-onboarding`,
+    `gcloud` (safety guardrails), `finding-google-skills`, `retrieving-developer-knowledge`.
+  - **2 Hooks**: `gcloud-guardrail` (PreToolUse validation) and `gcloud-skill-discovery`
+    (progressive skill suggestion).
+  - **Routing Rules**: Auto-suggests specialized skills (`gke-*`, `cloud-run-*`, etc.).
+  
+  **Quick Setup (crushrc):**
+  ```bash
+  # Enable Developer Knowledge MCP
+  mcp add developer-knowledge \
+    --type http \
+    --url "https://developerknowledge.googleapis.com/mcp" \
+    --header "X-Goog-Api-Key" "${DEVELOPERKNOWLEDGE_API_KEY}"
+  
+  # Load core skills (place SKILL.md files in skills paths)
+  skill load google-cloud-recipe-auth
+  skill load google-cloud-recipe-onboarding
+  skill load gcloud
+  skill load finding-google-skills
+  skill load retrieving-developer-knowledge
+  
+  # Add safety hooks
+  hook add PreToolUse gcloud-guardrail --command "crush-gcloud-validate" --match-tool "bash" --match-pattern "gcloud *"
+  hook add PreToolUse gcloud-skill-discovery --command "crush-gcloud-suggest-skills" --match-tool "bash" --match-pattern "gcloud *"
+  
+  # Required env var
+  export DEVELOPERKNOWLEDGE_API_KEY="your-api-key"
+  ```
+  
+  **Prerequisites:**
+  1. Google Cloud project with billing
+  2. `gcloud services enable developerknowledge.googleapis.com --project=<PROJECT_ID>`
+  3. Create API key: https://developers.google.com/knowledge/quickstart#create-secure-key
+  4. `gcloud` CLI installed
+  
+  See `GOOGLE_CLOUD_DEVELOPER_PLUGIN_PLAN.md` and `crushrc-google-cloud-developer` for complete setup.
