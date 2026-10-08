@@ -4292,12 +4292,13 @@ func (m *UI) generateLayout(w, h int) uiLayout {
 	appRect.Min.X += 1
 	appRect.Max.X -= 1
 
+	// step4で削除
 	if slices.Contains([]uiState{uiOnboarding, uiInitialize, uiLanding}, m.state) {
 		// extra padding on left and right for these states
 		appRect.Min.X += 1
 		appRect.Max.X -= 1
 	}
-
+	// step4で削除
 	uiLayout := uiLayout{
 		area:   area,
 		status: helpRect,
@@ -4961,9 +4962,28 @@ func (m *UI) applyThemeForProvider(providerID string) {
 // data.
 func (m *UI) applyTheme(s styles.Styles) {
 	*m.com.Styles = s
+	// step4で追加
+	m.applyCustomWorkingColors()
+	// step4で追加
 	common.InvalidateStyleCaches()
 	m.refreshStyles()
 	m.chat.InvalidateRenderCaches()
+}
+
+// applyCustomWorkingColors applies user-configured working indicator colors
+// from the config, overriding the theme defaults.
+func (m *UI) applyCustomWorkingColors() {
+	cfg := m.com.Config()
+	if cfg == nil || cfg.Options == nil || cfg.Options.TUI == nil {
+		return
+	}
+	tui := cfg.Options.TUI
+	if tui.WorkingColorFrom != "" {
+		m.com.Styles.WorkingGradFromColor = lipgloss.Color(tui.WorkingColorFrom)
+	}
+	if tui.WorkingColorTo != "" {
+		m.com.Styles.WorkingGradToColor = lipgloss.Color(tui.WorkingColorTo)
+	}
 }
 
 // previewTheme applies the given styles for live preview inside an open

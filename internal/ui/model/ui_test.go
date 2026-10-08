@@ -3,6 +3,9 @@ package model
 import (
 	"context"
 	"image"
+	"os"
+	"regexp"
+	"strings"
 	"testing"
 
 	"charm.land/bubbles/v2/textarea"
@@ -11,6 +14,7 @@ import (
 	"github.com/charmbracelet/crush/internal/agent/notify"
 	"github.com/charmbracelet/crush/internal/config"
 	"github.com/charmbracelet/crush/internal/csync"
+	"github.com/charmbracelet/crush/internal/lsp"
 	"github.com/charmbracelet/crush/internal/message"
 	"github.com/charmbracelet/crush/internal/session"
 	"github.com/charmbracelet/crush/internal/ui/attachments"
@@ -180,6 +184,30 @@ func (w *testWorkspace) AgentRun(ctx context.Context, _ string, prompt string, _
 func (w *testWorkspace) SetCompactMode(scope config.Scope, compact bool) error {
 	w.compactCalls = append(w.compactCalls, compact)
 	return nil
+}
+
+func (w *testWorkspace) GitBranch(context.Context) (string, error) {
+	return "", nil
+}
+
+func (w *testWorkspace) Resolver() config.VariableResolver {
+	return nil
+}
+
+func (w *testWorkspace) LSPGetStates() map[string]workspace.LSPClientInfo {
+	return nil
+}
+
+func (w *testWorkspace) LSPGetDiagnosticCounts(string) lsp.DiagnosticCounts {
+	return lsp.DiagnosticCounts{}
+}
+
+func (w *testWorkspace) ListMessages(context.Context, string) ([]message.Message, error) {
+	return nil, nil
+}
+
+func (w *testWorkspace) RoutesChannelEvents() bool {
+	return false
 }
 
 func TestDefaultKeyMapHasShiftTab(t *testing.T) {
@@ -782,4 +810,135 @@ func TestSwitchPlanToYolo(t *testing.T) {
 		require.False(t, u.cycleYolo, "explicit activation must not be undone by the Shift+Tab cycle")
 		require.Equal(t, config.AgentCoder, ws.setMainCalledWith)
 	}
+}
+
+func TestSidebarDrawLogo(t *testing.T) {
+	t.Parallel()
+
+	sty := styles.CharmtonePantera()
+	ws := &testWorkspace{cfg: &config.Config{
+		Options: &config.Options{
+			DisableProviderAutoUpdate: true,
+		},
+		Providers: csync.NewMap[string, config.ProviderConfig](),
+	}}
+	com := &common.Common{Workspace: ws, Styles: &sty}
+	keyMap := DefaultKeyMap()
+	att := attachments.New(nil, attachments.Keymap{
+		DeleteMode: keyMap.Editor.AttachmentDeleteMode,
+		DeleteAll:  keyMap.Editor.DeleteAllAttachments,
+		Escape:     keyMap.Editor.Escape,
+	})
+	u := &UI{
+		com:         com,
+		keyMap:      keyMap,
+		state:       uiChat,
+		focus:       uiFocusSidebar,
+		session:     &session.Session{ID: "sess-1", Title: "Test Session", PromptTokens: 100, CompletionTokens: 50, Cost: 0.01, EstimatedUsage: true},
+		chat:        NewChat(com, config.ScrollbarDefault),
+		textarea:    textarea.New(),
+		dialog:      dialog.NewOverlay(),
+		attachments: att,
+		width:       140,
+		height:      60,
+	}
+	u.status = NewStatus(com, u)
+
+	// Need to call updateLayoutAndSize first to initialize layout.sidebar
+	u.updateLayoutAndSize()
+
+	// Ensure not compact
+	u.isCompact = false
+
+	// Call updateSidebarScrollState which should generate sidebarDrawLogo
+	u.updateSidebarScrollState()
+
+	// Check that sidebarDrawLogo was set
+	require.NotEmpty(t, u.sidebarDrawLogo, "sidebarDrawLogo should not be empty")
+	t.Logf("sidebarDrawLogo length: %d", len(u.sidebarDrawLogo))
+
+	// Now test drawSidebar to also log dynamic logo comparison
+	// Create a mock screen to render to
+	scr := uv.NewScreenBuffer(140, 60)
+	// Draw the sidebar
+	area := u.layout.sidebar
+	u.drawSidebar(scr, area)
+
+	// Compare cached vs dynamic logo by reading the debug files
+	cachedLogo, err := os.ReadFile("/tmp/crush/sidebarDrawLogo_cached.txt")
+	require.NoError(t, err)
+	dynamicLogo, err := os.ReadFile("/tmp/crush/sidebarDrawLogo_dynamic.txt")
+	require.NoError(t, err)
+
+	t.Logf("Cached logo length: %d", len(cachedLogo))
+	t.Logf("Dynamic logo length: %d", len(dynamicLogo))
+
+	// They should be the same since agent is not busy and sidebar is tall enough
+	if string(cachedLogo) != string(dynamicLogo) {
+		t.Logf("Cached logo:\n%s", string(cachedLogo))
+		t.Logf("Dynamic logo:\n%s", string(dynamicLogo))
+	}
+}
+
+func TestReplaceColorsWithWhite(t *testing.T) {
+	t.Parallel()
+
+	sty := styles.CharmtonePantera()
+	ws := &testWorkspace{cfg: &config.Config{
+		Options: &config.Options{
+			DisableProviderAutoUpdate: true,
+		},
+		Providers: csync.NewMap[string, config.ProviderConfig](),
+	}}
+	com := &common.Common{Workspace: ws, Styles: &sty}
+	keyMap := DefaultKeyMap()
+	att := attachments.New(nil, attachments.Keymap{
+		DeleteMode: keyMap.Editor.AttachmentDeleteMode,
+		DeleteAll:  keyMap.Editor.DeleteAllAttachments,
+		Escape:     keyMap.Editor.Escape,
+	})
+	u := &UI{
+		com:         com,
+		keyMap:      keyMap,
+		state:       uiChat,
+		focus:       uiFocusSidebar,
+		session:     &session.Session{ID: "sess-1", Title: "Test Session", PromptTokens: 100, CompletionTokens: 50, Cost: 0.01, EstimatedUsage: true},
+		chat:        NewChat(com, config.ScrollbarDefault),
+		textarea:    textarea.New(),
+		dialog:      dialog.NewOverlay(),
+		attachments: att,
+		width:       140,
+		height:      60,
+	}
+	u.status = NewStatus(com, u)
+
+	// Need to call updateLayoutAndSize first to initialize layout.sidebar
+	u.updateLayoutAndSize()
+	u.isCompact = false
+	u.updateSidebarScrollState()
+
+	// Get cached logo
+	cachedLogo := u.sidebarDrawLogo
+	require.NotEmpty(t, cachedLogo)
+
+	// Test replaceColorsWithWhite
+	whiteLogo := replaceColorsWithWhite(cachedLogo)
+
+	// The result should be different
+	require.NotEqual(t, cachedLogo, whiteLogo)
+
+	// All 38;2;r;g;b patterns should be replaced with 38;2;255;255;255
+	// Count occurrences of 38;2; in original vs replaced
+	originalColorCount := strings.Count(cachedLogo, "38;2;")
+	whiteColorCount := strings.Count(whiteLogo, "38;2;255;255;255")
+
+	// All color codes should now be white
+	require.Equal(t, originalColorCount, whiteColorCount, "all color codes should be replaced with white")
+
+	// Verify no non-white RGB colors remain
+	nonWhiteRegex := regexp.MustCompile(`38;2;(25[0-4]|2[0-4]\d|1\d\d|[1-9]?\d);`)
+	require.False(t, nonWhiteRegex.MatchString(whiteLogo), "no non-white RGB colors should remain")
+
+	// Structure should be preserved (same line count)
+	require.Equal(t, strings.Count(cachedLogo, "\n"), strings.Count(whiteLogo, "\n"))
 }

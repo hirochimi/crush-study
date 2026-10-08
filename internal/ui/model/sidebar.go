@@ -4,6 +4,8 @@ import (
 	"cmp"
 	"fmt"
 	"image"
+	"image/color"
+	"regexp"
 	"strings"
 
 	"charm.land/lipgloss/v2"
@@ -14,6 +16,8 @@ import (
 	uv "github.com/charmbracelet/ultraviolet"
 	"github.com/charmbracelet/ultraviolet/layout"
 )
+
+var ansiEscapeRegex = regexp.MustCompile(`\x1b\[[0-9;]*m`)
 
 // modelInfo renders the current model information including reasoning
 // settings and context usage/cost for the sidebar.
@@ -147,7 +151,11 @@ func (m *UI) drawSidebar(scr uv.Screen, area uv.Rectangle) {
 		return
 	}
 
+	// Use cached logo as-is normally, but replace all colors with white when agent is busy.
 	sidebarLogo := m.sidebarDrawLogo
+	if m.isAgentBusy() {
+		sidebarLogo = replaceColorsWithWhite(sidebarLogo)
+	}
 	contentWidth := m.sidebarContentWidth
 	contentHeight := m.sidebarContentHeight
 	totalLines := m.sidebarTotalLines
@@ -197,6 +205,15 @@ func (m *UI) drawSidebar(scr uv.Screen, area uv.Rectangle) {
 	}
 }
 
+// replaceColorsWithWhite replaces all ANSI 24-bit color codes (38;2;r;g;b) in the
+// cached logo with white (255;255;255). This is used to render the logo in white
+// when the agent is busy, without re-rendering the entire logo.
+func replaceColorsWithWhite(logo string) string {
+	// Pattern matches: ESC[38;2;r;g;b where r,g,b are 1-3 digits
+	ansiColorRegex := regexp.MustCompile(`\x1b\[38;2;\d+;\d+;\d+`)
+	return ansiColorRegex.ReplaceAllString(logo, "\x1b[38;2;255;255;255")
+}
+
 // fileChangeCount returns the number of session files with non-zero additions
 // or deletions.
 func fileChangeCount(files []SessionFile) int {
@@ -219,4 +236,64 @@ func mcpCount(mcpCfgs []config.MCP, states map[string]mcp.ClientInfo) int {
 		}
 	}
 	return count
+}
+
+// replaceTitleGradient creates a "dynamic" logo from a cached one by replacing
+// the title gradient colors (TitleColorA/TitleColorB) with the working gradient
+// colors (WorkingGradFromColor/WorkingGradToColor). This simulates what drawSidebar
+// would render when the agent is busy, without needing to re-run the full logo render.
+func replaceTitleGradient(cachedLogo string, oldColorA, oldColorB, newColorA, newColorB color.Color) string {
+	// The cached logo has ANSI escape codes for the gradient from oldColorA to oldColorB.
+	// We extract the plain text of the title lines and re-apply the gradient with new colors.
+	lines := strings.Split(cachedLogo, "\n")
+	var result strings.Builder
+
+	for i, line := range lines {
+		plain := ansiEscapeRegex.ReplaceAllString(line, "")
+		// Check if this is a title line (contains "Charm" or "Crush" or version)
+		if strings.Contains(plain, "Charm") || strings.Contains(plain, "devel") ||
+			strings.Contains(plain, "Crush") || (strings.Contains(plain, "╱") && i > 1) {
+			// Re-apply gradient with new colors
+			newLine := applyGradient(plain, newColorA, newColorB)
+			result.WriteString(newLine)
+		} else {
+			// Field lines or empty - keep as is
+			result.WriteString(line)
+		}
+		if i < len(lines)-1 {
+			result.WriteString("\n")
+		}
+	}
+
+	return result.String()
+}
+
+// applyGradient applies a foreground gradient from colorA to colorB to text.
+func applyGradient(text string, colorA, colorB color.Color) string {
+	runes := []rune(text)
+	if len(runes) == 0 {
+		return ""
+	}
+
+	var b strings.Builder
+	for i, r := range runes {
+		ratio := float64(i) / float64(max(1, len(runes)-1))
+		// Interpolate between colorA and colorB using lipgloss color blending
+		c := blendColors(colorA, colorB, ratio)
+		b.WriteString(lipgloss.NewStyle().Foreground(c).Render(string(r)))
+	}
+	return b.String()
+}
+
+// blendColors interpolates between two colors.
+func blendColors(a, b color.Color, t float64) color.Color {
+	ra, ga, ba, aa := a.RGBA()
+	rb, gb, bb, ab := b.RGBA()
+
+	r := uint16(float64(ra)*(1-t) + float64(rb)*t)
+	g := uint16(float64(ga)*(1-t) + float64(gb)*t)
+	bl := uint16(float64(ba)*(1-t) + float64(bb)*t)
+	al := uint16(float64(aa)*(1-t) + float64(ab)*t)
+
+	return color.RGBA64{R: r, G: g, B: bl, A: al}
 }

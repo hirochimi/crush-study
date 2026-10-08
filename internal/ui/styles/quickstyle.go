@@ -175,8 +175,10 @@ func quickStyle(o quickStyleOpts) Styles {
 	s.Background = o.bgBase
 
 	// Populate color fields
-	s.WorkingGradFromColor = o.primary
-	s.WorkingGradToColor = o.secondary
+	// Use blue/cyan for working indicator to make it clearly distinct from the
+	// primary brand colors (which are often pink/magenta in default themes).
+	s.WorkingGradFromColor = o.ansiBlue
+	s.WorkingGradToColor = o.ansiCyan
 	s.WorkingLabelColor = o.fgMostSubtle
 	s.WorkingTimerColor = o.fgMostSubtle
 
