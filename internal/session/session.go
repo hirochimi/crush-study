@@ -6,6 +6,7 @@ import (
 	"encoding/json"
 	"fmt"
 	"log/slog"
+	"slices"
 	"strings"
 	"sync"
 
@@ -366,7 +367,7 @@ func unmarshalTodos(data string) ([]Todo, error) {
 
 // MCPDisabledServers returns the MCP servers disabled for this
 // repository. The database is scoped to the project, so the override set
-// is shared by every session in the repository, including sub-agent
+// is shared by every session in the repository, including subagent
 // sessions. New repositories start empty and follow the config.
 func (s *service) MCPDisabledServers(ctx context.Context) ([]string, error) {
 	return s.q.ListMCPDisabledServers(ctx)
@@ -397,6 +398,20 @@ func (s *service) SetMCPServerDisabled(ctx context.Context, name string, disable
 // repository. Startup force-starts them so the override survives restarts.
 func (s *service) MCPServersEnabled(ctx context.Context) ([]string, error) {
 	return s.q.ListMCPEnabledServers(ctx)
+}
+
+// HasMCPOverride reports whether the named MCP server has a
+// repository-scoped override, which takes precedence over the config.
+func HasMCPOverride(ctx context.Context, s Service, name string) (bool, error) {
+	disabled, err := s.MCPDisabledServers(ctx)
+	if err != nil {
+		return false, err
+	}
+	enabled, err := s.MCPServersEnabled(ctx)
+	if err != nil {
+		return false, err
+	}
+	return slices.Contains(disabled, name) || slices.Contains(enabled, name), nil
 }
 
 func NewService(q *db.Queries, conn *sql.DB) Service {
