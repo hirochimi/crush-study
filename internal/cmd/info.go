@@ -6,6 +6,7 @@ import (
 	"strings"
 
 	"github.com/charmbracelet/crush/internal/config"
+	"github.com/charmbracelet/crush/internal/permission"
 	"github.com/spf13/cobra"
 )
 
@@ -22,7 +23,7 @@ var infoCmd = &cobra.Command{
 		dataDir, _ := cmd.Flags().GetString("data-dir")
 		debug, _ := cmd.Flags().GetBool("debug")
 
-		cfg, err := config.Load(cwd, dataDir, debug)
+		cfg, err := config.Load(cmd.Context(), cwd, dataDir, debug)
 		if err != nil {
 			return err
 		}
@@ -262,14 +263,14 @@ func writePermissions(b *strings.Builder, cfg *config.ConfigStore) {
 	overrides := cfg.Overrides()
 
 	if c.Permissions == nil {
-		if !overrides.SkipPermissionRequests {
+		if overrides.PermissionMode == permission.PermissionModeYolo {
 			return
 		}
-	} else if !overrides.SkipPermissionRequests && len(c.Permissions.AllowedTools) == 0 {
+	} else if overrides.PermissionMode != permission.PermissionModeYolo && len(c.Permissions.AllowedTools) == 0 {
 		return
 	}
 	b.WriteString("[permissions]\n")
-	if overrides.SkipPermissionRequests {
+	if overrides.PermissionMode == permission.PermissionModeYolo {
 		b.WriteString("mode = yolo\n")
 	}
 	if c.Permissions != nil && len(c.Permissions.AllowedTools) > 0 {
