@@ -35,6 +35,7 @@ import (
 	"charm.land/fantasy/providers/openrouter"
 	"charm.land/fantasy/providers/vercel"
 	"charm.land/lipgloss/v2"
+	"charm.land/tone"
 	"github.com/charmbracelet/crush/internal/agent/hyper"
 	"github.com/charmbracelet/crush/internal/agent/notify"
 	"github.com/charmbracelet/crush/internal/agent/tools"
@@ -50,7 +51,6 @@ import (
 	"github.com/charmbracelet/crush/internal/stringext"
 	"github.com/charmbracelet/crush/internal/version"
 	"github.com/charmbracelet/x/ansi"
-	"github.com/charmbracelet/x/exp/charmtone"
 )
 
 const (
@@ -196,9 +196,9 @@ type SessionAgent interface {
 	SetSystemPrompt(systemPrompt string)
 	Cancel(sessionID string)
 	CancelAll()
-	IsSessionBusy(sessionID string) bool
+	HasActiveTurn(sessionID string) bool
+	HasPendingWork(sessionID string) bool
 	IsBusy() bool
-	ListSettledMessages(ctx context.Context, sessionID string) ([]message.Message, error)
 	QueuedPrompts(sessionID string) int
 	QueuedPromptsList(sessionID string) []string
 	ClearQueue(sessionID string)
@@ -536,7 +536,7 @@ func (a *sessionAgent) settleDroppedCalls(drops []SessionAgentCall) {
 	defer cancel()
 	for _, d := range drops {
 		if d.Report != nil {
-			if _, err := a.createUserMessage(ctx, d); err != nil {
+			if _, err := a.createUserMessage(ctx, d, ""); err != nil {
 				slog.Error("Failed to record a dropped subagent report", "session_id", d.SessionID, "error", err)
 			}
 		}
@@ -603,16 +603,17 @@ func (a *sessionAgent) persistCanceledTurn(ctx context.Context, call SessionAgen
 	writeCtx, cancel := context.WithTimeout(context.WithoutCancel(ctx), 5*time.Second)
 	defer cancel()
 	if !userMsgCreated {
-		if _, err := a.createUserMessage(writeCtx, call); err != nil {
+		if _, err := a.createUserMessage(writeCtx, call, ""); err != nil {
 			return err
 		}
 	}
 	largeModel := a.models().Large
 	assistant, err := a.messages.Create(writeCtx, call.SessionID, message.CreateMessageParams{
-		Role:     message.Assistant,
-		Parts:    []message.ContentPart{},
-		Model:    largeModel.ModelCfg.Model,
-		Provider: largeModel.ModelCfg.Provider,
+		Role:      message.Assistant,
+		Parts:     []message.ContentPart{},
+		Model:     largeModel.ModelCfg.Model,
+		ModelName: a.modelDisplayName(largeModel.ModelCfg),
+		Provider:  largeModel.ModelCfg.Provider,
 	})
 	if err != nil {
 		return err
@@ -772,7 +773,7 @@ func (a *sessionAgent) Run(ctx context.Context, call SessionAgentCall) (result *
 		return nil, nil
 	}
 
-	if a.IsSessionBusy(call.SessionID) {
+	if a.HasActiveTurn(call.SessionID) {
 		// Busy: an earlier prompt is active. Queue this call so it is
 		// folded into (or sequenced after) the active turn, and release any
 		// accept reservation. A Cancel arriving after this point sees the
@@ -804,6 +805,7 @@ func (a *sessionAgent) Run(ctx context.Context, call SessionAgentCall) (result *
 	// the lock so a Cancel that arrives between here and assistant creation
 	// is not lost.
 	runCtx := context.WithValue(ctx, tools.SessionIDContextKey, call.SessionID)
+	runCtx = withRefusalRetries(runCtx, refusalRetriesPerTurn)
 	genCtx, cancel = context.WithCancel(runCtx)
 	ac := &activeCancel{cancel: cancel}
 	a.activeRequests.Set(call.SessionID, ac)
@@ -933,8 +935,10 @@ func (a *sessionAgent) Run(ctx context.Context, call SessionAgentCall) (result *
 		}()
 	}
 
-	// Add the user message to the session.
-	_, err = a.createUserMessage(ctx, call)
+	// Add the user message to the session. The context sent ahead of the
+	// prompt is stored with it so later requests replay the same text.
+	modelContext := hostContextPrompt(call.HostContext) + notesPrompt(a.takeNotes(call.SessionID))
+	_, err = a.createUserMessage(ctx, call, modelContext)
 	if err != nil {
 		return nil, err
 	}
@@ -970,7 +974,7 @@ func (a *sessionAgent) Run(ctx context.Context, call SessionAgentCall) (result *
 		maxOutputTokens = &call.MaxOutputTokens
 	}
 	result, err = agent.Stream(genCtx, fantasy.AgentStreamCall{
-		Prompt:           hostContextPrompt(call.HostContext) + notesPrompt(a.takeNotes(call.SessionID)) + message.PromptWithTextAttachments(call.Prompt, call.Attachments),
+		Prompt:           modelContext + message.PromptWithTextAttachments(strings.TrimSpace(call.Prompt), call.Attachments),
 		Files:            files,
 		Messages:         history,
 		Headers:          sessionHeaders(call.SessionID),
@@ -1009,7 +1013,7 @@ func (a *sessionAgent) Run(ctx context.Context, call SessionAgentCall) (result *
 			fold, canceled := a.drainQueueForStep(call.SessionID)
 			a.settleDroppedCalls(canceled)
 			for _, queued := range fold {
-				userMessage, createErr := a.createUserMessage(callContext, queued)
+				userMessage, createErr := a.createUserMessage(callContext, queued, "")
 				if createErr != nil {
 					return callContext, prepared, createErr
 				}
@@ -1045,10 +1049,11 @@ func (a *sessionAgent) Run(ctx context.Context, call SessionAgentCall) (result *
 
 			var assistantMsg message.Message
 			assistantMsg, err = a.messages.Create(callContext, call.SessionID, message.CreateMessageParams{
-				Role:     message.Assistant,
-				Parts:    []message.ContentPart{},
-				Model:    largeModel.ModelCfg.Model,
-				Provider: largeModel.ModelCfg.Provider,
+				Role:      message.Assistant,
+				Parts:     []message.ContentPart{},
+				Model:     largeModel.ModelCfg.Model,
+				ModelName: a.modelDisplayName(largeModel.ModelCfg),
+				Provider:  largeModel.ModelCfg.Provider,
 			})
 			if err != nil {
 				return callContext, prepared, err
@@ -1151,10 +1156,14 @@ func (a *sessionAgent) Run(ctx context.Context, call SessionAgentCall) (result *
 			if _, ok := sanitizedToolCalls.Get(result.ToolCallID); ok {
 				toolResult.Content = "Tool call failed: arguments were not valid JSON. Please check your tool call format and try again."
 				toolResult.IsError = true
+			} else if toolResult.IsError && genCtx.Err() != nil {
+				// The turn was cancelled out from under the tool.
+				toolResult.Content = interruptedToolCallResult
 			}
 			if !toolResult.IsError && toolResult.Name != "" {
 				completedToolCalls.Set(toolResult.Name, struct{}{})
 			}
+			toolResult.FinishedAtMs = time.Now().UnixMilli()
 			// Use parent ctx instead of genCtx to ensure the message is created
 			// even if the request is canceled mid-stream
 			_, createMsgErr := a.messages.Create(ctx, currentAssistant.SessionID, message.CreateMessageParams{
@@ -1196,7 +1205,8 @@ func (a *sessionAgent) Run(ctx context.Context, call SessionAgentCall) (result *
 				return getSessionErr
 			}
 			usage, estimated := fallbackStepUsage(stepMessages, stepResult)
-			a.updateSessionUsage(largeModel, &updatedSession, usage, a.openrouterCost(stepResult.ProviderMetadata), estimated)
+			pricingModel := a.modelForStepCost(largeModel, stepResult.ProviderMetadata)
+			a.updateSessionUsage(pricingModel, &updatedSession, usage, a.openrouterCost(stepResult.ProviderMetadata), estimated)
 			_, sessionErr := a.sessions.Save(ctx, updatedSession)
 			if sessionErr != nil {
 				return sessionErr
@@ -1281,9 +1291,13 @@ func (a *sessionAgent) Run(ctx context.Context, call SessionAgentCall) (result *
 		var providerErr *fantasy.ProviderError
 		var requestTimedOutErr *requestTimeoutError
 		const defaultTitle = "Provider Error"
-		linkStyle := lipgloss.NewStyle().Foreground(charmtone.Guac).Underline(true)
+		linkStyle := lipgloss.NewStyle().Foreground(tone.Guac).Underline(true)
 		if isCancelErr {
 			currentAssistant.AddFinish(message.FinishReasonCanceled, "User canceled request", "")
+		} else if errors.Is(err, errRefused) {
+			// Every retry was refused; keep the refusal banner rather than
+			// reporting a generic provider error.
+			currentAssistant.AddFinish(message.FinishReasonContentFilter, "", "")
 		} else if errors.As(err, &requestTimedOutErr) {
 			// Checked before the provider branches so a deadline our own
 			// request timeout imposed is never reported as a provider error.
@@ -1481,14 +1495,13 @@ func (a *sessionAgent) Run(ctx context.Context, call SessionAgentCall) (result *
 // Summarize compacts the session on the user's request. It returns
 // ErrCompactionBlocked when a PreCompact hook blocks it.
 func (a *sessionAgent) Summarize(ctx context.Context, sessionID string, opts fantasy.ProviderOptions, onAuthRefresh func(context.Context, *fantasy.ProviderError) error) error {
+	if a.HasPendingWork(sessionID) {
+		return ErrSessionBusy
+	}
 	return a.summarize(ctx, sessionID, compactTriggerManual, opts, onAuthRefresh)
 }
 
 func (a *sessionAgent) summarize(ctx context.Context, sessionID, trigger string, opts fantasy.ProviderOptions, onAuthRefresh func(context.Context, *fantasy.ProviderError) error) error {
-	if a.IsSessionBusy(sessionID) {
-		return ErrSessionBusy
-	}
-
 	largeModel := a.models().Large
 	systemPromptPrefix := a.systemPromptPrefix.Get()
 
@@ -1530,6 +1543,7 @@ func (a *sessionAgent) summarize(ctx context.Context, sessionID, trigger string,
 	summaryMessage, err := a.messages.Create(ctx, sessionID, message.CreateMessageParams{
 		Role:             message.Assistant,
 		Model:            largeModel.ModelCfg.Model,
+		ModelName:        a.modelDisplayName(largeModel.ModelCfg),
 		Provider:         largeModel.ModelCfg.Provider,
 		IsSummaryMessage: true,
 	})
@@ -1590,18 +1604,21 @@ func (a *sessionAgent) summarize(ctx context.Context, sessionID, trigger string,
 		return err
 	}
 
-	var openrouterCost *float64
+	var overrideCost *float64
 	for _, step := range resp.Steps {
 		summaryMessage.PrismModelID, summaryMessage.PrismModelName = extractPrismModel(step.ProviderMetadata)
 		summaryMessage.PrismHypercreditSavings, summaryMessage.PrismDollarSavings = extractPrismSavings(step.ProviderMetadata)
 		stepCost := a.openrouterCost(step.ProviderMetadata)
 		if stepCost != nil {
 			newCost := *stepCost
-			if openrouterCost != nil {
-				newCost += *openrouterCost
+			if overrideCost != nil {
+				newCost += *overrideCost
 			}
-			openrouterCost = &newCost
+			overrideCost = &newCost
 		}
+	}
+	if hyperCost := a.hyperStepsCost(largeModel, resp.Steps); hyperCost != nil {
+		overrideCost = hyperCost
 	}
 
 	// A compaction summary that stopped short is the record the session
@@ -1618,7 +1635,7 @@ func (a *sessionAgent) summarize(ctx context.Context, sessionID, trigger string,
 		return err
 	}
 
-	a.updateSessionUsage(largeModel, &currentSession, resp.TotalUsage, openrouterCost, false)
+	a.updateSessionUsage(largeModel, &currentSession, resp.TotalUsage, overrideCost, false)
 
 	// Just in case, get just the last usage info.
 	usage := resp.Response.Usage
@@ -1678,14 +1695,14 @@ func sessionHeaders(sessionID string) map[string]string {
 	}
 }
 
-func (a *sessionAgent) createUserMessage(ctx context.Context, call SessionAgentCall) (message.Message, error) {
+func (a *sessionAgent) createUserMessage(ctx context.Context, call SessionAgentCall, modelContext string) (message.Message, error) {
 	if call.Report != nil {
 		return a.messages.Create(ctx, call.SessionID, message.CreateMessageParams{
 			Role:  message.User,
 			Parts: []message.ContentPart{*call.Report},
 		})
 	}
-	parts := []message.ContentPart{message.TextContent{Text: call.Prompt, Hidden: call.HiddenUserMessage}}
+	parts := []message.ContentPart{message.TextContent{Text: call.Prompt, Hidden: call.HiddenUserMessage, Context: modelContext}}
 	var attachmentParts []message.ContentPart
 	for _, attachment := range call.Attachments {
 		attachmentParts = append(attachmentParts, message.BinaryContent{Path: attachment.FilePath, MIMEType: attachment.MimeType, Data: attachment.Content})
@@ -1731,7 +1748,7 @@ If not, please feel free to ignore. Again do not mention this message to the use
 			knownToolCallIDs[tc.ID] = struct{}{}
 		}
 	}
-	toolResultsByCall := make(map[string][]fantasy.MessagePart)
+	toolResultsByCall := make(map[string]fantasy.ToolResultPart)
 	for _, m := range msgs {
 		if m.Role != message.Tool {
 			continue
@@ -1755,7 +1772,17 @@ If not, please feel free to ignore. Again do not mention this message to the use
 					)
 					continue
 				}
-				toolResultsByCall[tr.ToolCallID] = append(toolResultsByCall[tr.ToolCallID], part)
+				// One result per call: a real result beats an error, since the
+				// usual duplicate is a premature "interrupted" then the output.
+				if kept, seen := toolResultsByCall[tr.ToolCallID]; seen {
+					_, keptIsError := fantasy.AsToolResultOutputType[fantasy.ToolResultOutputContentError](kept.Output)
+					slog.Warn("Dropping duplicate tool result", "session_id", m.SessionID,
+						"tool_call_id", tr.ToolCallID, "kept_later", keptIsError)
+					if !keptIsError {
+						continue
+					}
+				}
+				toolResultsByCall[tr.ToolCallID] = tr
 			}
 		}
 	}
@@ -2009,27 +2036,26 @@ func (a *sessionAgent) generateTitle(ctx context.Context, sessionID string, user
 	}
 
 	// Calculate usage and cost.
-	var openrouterCost *float64
+	var overrideCost *float64
 	for _, step := range resp.Steps {
 		stepCost := a.openrouterCost(step.ProviderMetadata)
 		if stepCost != nil {
 			newCost := *stepCost
-			if openrouterCost != nil {
-				newCost += *openrouterCost
+			if overrideCost != nil {
+				newCost += *overrideCost
 			}
-			openrouterCost = &newCost
+			overrideCost = &newCost
 		}
 	}
+	if hyperCost := a.hyperStepsCost(model, resp.Steps); hyperCost != nil {
+		overrideCost = hyperCost
+	}
 
-	modelConfig := model.CatwalkCfg
-	cost := modelConfig.Pricing.CacheCreate/1e6*float64(resp.TotalUsage.CacheCreationTokens) +
-		modelConfig.Pricing.CacheHit/1e6*float64(resp.TotalUsage.CacheReadTokens) +
-		modelConfig.Pricing.Input/1e6*float64(resp.TotalUsage.InputTokens) +
-		modelConfig.Pricing.Output/1e6*float64(resp.TotalUsage.OutputTokens)
+	cost := usageCost(model.CatwalkCfg.Pricing, resp.TotalUsage)
 
-	// Use override cost if available (e.g., from OpenRouter).
-	if openrouterCost != nil {
-		cost = *openrouterCost
+	// Use override cost if available (e.g., from OpenRouter or Hyper Prism).
+	if overrideCost != nil {
+		cost = *overrideCost
 	}
 
 	// Skip cost accumulation
@@ -2080,6 +2106,54 @@ func extractPrismModel(metadata fantasy.ProviderMetadata) (modelID, modelName st
 	return modelID, modelName
 }
 
+// modelDisplayName resolves the display name of a model from the
+// current config, falling back to the model ID when no entry exists or
+// the entry has no name. The result is persisted on assistant messages
+// so the UI keeps showing a meaningful name after the model is renamed
+// or removed from the config.
+func (a *sessionAgent) modelDisplayName(model config.SelectedModel) string {
+	if a.cfg != nil {
+		if cfg := a.cfg.Config(); cfg != nil {
+			if m := cfg.GetModel(model.Provider, model.Model); m != nil && m.Name != "" {
+				return m.Name
+			}
+		}
+	}
+	return model.Model
+}
+
+func (a *sessionAgent) modelForStepCost(model Model, metadata fantasy.ProviderMetadata) Model {
+	if model.ModelCfg.Provider != hyper.Name || a.cfg == nil {
+		return model
+	}
+	routedModelID, _ := extractPrismModel(metadata)
+	if routedModelID == "" {
+		return model
+	}
+	cfg := a.cfg.Config()
+	if cfg == nil {
+		return model
+	}
+	routedModel := cfg.GetModel(hyper.Name, routedModelID)
+	if routedModel == nil {
+		return model
+	}
+	model.CatwalkCfg = *routedModel
+	return model
+}
+
+func (a *sessionAgent) hyperStepsCost(model Model, steps []fantasy.StepResult) *float64 {
+	if model.ModelCfg.Provider != hyper.Name || len(steps) == 0 {
+		return nil
+	}
+	var cost float64
+	for _, step := range steps {
+		pricingModel := a.modelForStepCost(model, step.ProviderMetadata)
+		cost += usageCost(pricingModel.CatwalkCfg.Pricing, step.Usage)
+	}
+	return &cost
+}
+
 // extractPrismSavings returns the hypercredit and dollar savings from
 // routing the turn through the Hyper Prism model router, as reported by
 // its savings trailers, or nil when not reported or malformed.
@@ -2108,16 +2182,19 @@ func extraFieldFloat(pm *openai.ProviderMetadata, key string) *float64 {
 	return &parsed
 }
 
+func usageCost(pricing catwalk.Pricing, usage fantasy.Usage) float64 {
+	return pricing.CacheCreate/1e6*float64(usage.CacheCreationTokens) +
+		pricing.CacheHit/1e6*float64(usage.CacheReadTokens) +
+		pricing.Input/1e6*float64(usage.InputTokens) +
+		pricing.Output/1e6*float64(usage.OutputTokens)
+}
+
 func (a *sessionAgent) updateSessionUsage(model Model, session *session.Session, usage fantasy.Usage, overrideCost *float64, estimated bool) {
 	if !usageIsZero(usage) {
 		session.EstimatedUsage = estimated
 	}
 
-	modelConfig := model.CatwalkCfg
-	cost := modelConfig.Pricing.CacheCreate/1e6*float64(usage.CacheCreationTokens) +
-		modelConfig.Pricing.CacheHit/1e6*float64(usage.CacheReadTokens) +
-		modelConfig.Pricing.Input/1e6*float64(usage.InputTokens) +
-		modelConfig.Pricing.Output/1e6*float64(usage.OutputTokens)
+	cost := usageCost(model.CatwalkCfg.Pricing, usage)
 
 	if !estimated {
 		a.eventTokensUsed(session.ID, model, usage, cost)
@@ -2256,6 +2333,9 @@ func (a *sessionAgent) CancelAll() {
 		for key := range a.activeRequests.Seq2() {
 			a.Cancel(key) // key is sessionID
 		}
+		for key := range a.acceptedRuns.Seq2() {
+			a.Cancel(key)
+		}
 		for a.IsBusy() {
 			if time.Now().After(deadline) {
 				slog.Warn("Gave up waiting for agent runs to cancel; their final state may not be recorded")
@@ -2269,20 +2349,29 @@ func (a *sessionAgent) CancelAll() {
 	}
 }
 
+// IsBusy reports whether any session has an active or accepted run.
 func (a *sessionAgent) IsBusy() bool {
-	var busy bool
 	for ac := range a.activeRequests.Seq() {
 		if ac != nil {
-			busy = true
-			break
+			return true
 		}
 	}
+	return a.acceptedRuns.Len() > 0
+}
+
+// HasActiveTurn ignores accepts so Run, holding its own, doesn't queue behind itself.
+func (a *sessionAgent) HasActiveTurn(sessionID string) bool {
+	_, busy := a.activeRequests.Get(sessionID)
 	return busy
 }
 
-func (a *sessionAgent) IsSessionBusy(sessionID string) bool {
-	_, busy := a.activeRequests.Get(sessionID)
-	return busy
+// HasPendingWork reports whether sessionID has an active or accepted run.
+func (a *sessionAgent) HasPendingWork(sessionID string) bool {
+	if a.HasActiveTurn(sessionID) {
+		return true
+	}
+	accepted, _ := a.acceptedRuns.Get(sessionID)
+	return accepted > 0
 }
 
 func (a *sessionAgent) QueuedPrompts(sessionID string) int {

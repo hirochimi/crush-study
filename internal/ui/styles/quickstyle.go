@@ -235,6 +235,11 @@ func quickStyle(o quickStyleOpts) Styles {
 
 	s.Background = o.bgBase
 
+	// The terminal's background is restored before the banner is printed.
+	// Keep text on its default foreground so it stays readable after exit.
+	s.ExitBanner.Text = lipgloss.NewStyle()
+	s.ExitBanner.Label = lipgloss.NewStyle().Bold(true)
+
 	// Populate color fields
     // Use blue/cyan for working indicator to make it clearly distinct from the
     // primary brand colors (which are often pink/magenta in default themes).

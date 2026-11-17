@@ -179,6 +179,7 @@ func wrapEvent(ev any) *pubsub.Payload {
 			SessionTitle: e.Payload.SessionTitle,
 			RunID:        e.Payload.RunID,
 			Type:         proto.AgentEventType(e.Payload.Type),
+			ProviderID:   e.Payload.ProviderID,
 			AWSSOCommand: e.Payload.AWSSOCommand,
 			AWSSOURL:     e.Payload.AWSSOURL,
 		}
@@ -407,6 +408,7 @@ func messageToProto(m message.Message) proto.Message {
 		SessionID:               m.SessionID,
 		Role:                    proto.MessageRole(m.Role),
 		Model:                   m.Model,
+		ModelName:               m.ModelName,
 		Provider:                m.Provider,
 		PrismModelID:            m.PrismModelID,
 		PrismModelName:          m.PrismModelName,
@@ -430,20 +432,22 @@ func messageToProto(m message.Message) proto.Message {
 			})
 		case message.ToolCall:
 			msg.Parts = append(msg.Parts, proto.ToolCall{
-				ID:       v.ID,
-				Name:     v.Name,
-				Input:    v.Input,
-				Finished: v.Finished,
+				ID:          v.ID,
+				Name:        v.Name,
+				Input:       v.Input,
+				Finished:    v.Finished,
+				StartedAtMs: v.StartedAtMs,
 			})
 		case message.ToolResult:
 			msg.Parts = append(msg.Parts, proto.ToolResult{
-				ToolCallID: v.ToolCallID,
-				Name:       v.Name,
-				Content:    v.Content,
-				Data:       v.Data,
-				MIMEType:   v.MIMEType,
-				Metadata:   v.Metadata,
-				IsError:    v.IsError,
+				ToolCallID:   v.ToolCallID,
+				Name:         v.Name,
+				Content:      v.Content,
+				Data:         v.Data,
+				MIMEType:     v.MIMEType,
+				Metadata:     v.Metadata,
+				IsError:      v.IsError,
+				FinishedAtMs: v.FinishedAtMs,
 			})
 		case message.Finish:
 			msg.Parts = append(msg.Parts, proto.Finish{

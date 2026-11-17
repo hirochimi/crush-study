@@ -9,6 +9,7 @@ import (
 	tea "charm.land/bubbletea/v2"
 	"charm.land/lipgloss/v2"
 	"github.com/charmbracelet/crush/internal/config"
+	"github.com/charmbracelet/crush/internal/message"
 	"github.com/charmbracelet/crush/internal/ui/anim"
 	"github.com/charmbracelet/crush/internal/ui/chat"
 	"github.com/charmbracelet/crush/internal/ui/common"
@@ -252,12 +253,17 @@ func (m *Chat) Draw(scr uv.Screen, area uv.Rectangle) {
 	}
 
 	rendered := m.list.Render()
-	// If we're in follow mode but the render revealed we're no longer at
-	// the bottom (e.g. streaming content grew an item), re-anchor and
-	// re-render so the view stays pinned to the end.
-	if m.follow && !m.list.AtBottom() {
+	// In follow mode the view stays pinned to the end. Re-anchor whenever
+	// the render moved the end: content growing past it (streaming), or
+	// shrinking away from it (an item removed, such as the prompt echo
+	// giving way to the stored prompt), which would otherwise leave the
+	// transcript lifted off the bottom until something else scrolls.
+	if m.follow {
+		idx, line := m.list.ScrollPosition()
 		m.list.ScrollToBottom()
-		rendered = m.list.Render()
+		if newIdx, newLine := m.list.ScrollPosition(); newIdx != idx || newLine != line {
+			rendered = m.list.Render()
+		}
 	}
 	method, ok := scr.WidthMethod().(ansi.Method)
 	if !ok {
@@ -532,21 +538,6 @@ func (m *Chat) UpdateNestedToolIDs(containerID string) {
 // of how many items are animating. gen is the clock generation the tick
 // was armed for.
 type animTickMsg struct{ gen uint64 }
-
-// HasLiveSpinner reports whether any item, on screen or not, is spinning
-// with the animation clock allowed. A frozen spinner is a ghost left by a
-// killed run, not progress.
-func (m *Chat) HasLiveSpinner() bool {
-	if !m.animAllowed {
-		return false
-	}
-	for idx := m.list.Len() - 1; idx >= 0; idx-- {
-		if animatable, ok := m.list.ItemAt(idx).(chat.Animatable); ok && animatable.Spinning() {
-			return true
-		}
-	}
-	return false
-}
 
 // hasVisibleAnimation reports whether any item in the viewport is spinning.
 func (m *Chat) hasVisibleAnimation() bool {
@@ -997,6 +988,33 @@ func (m *Chat) RemoveMessage(id string) {
 		if item, ok := m.list.ItemAt(i).(chat.MessageItem); ok {
 			m.idInxMap[item.ID()] = i
 		}
+	}
+}
+
+// RemoveStaleToolCalls removes the tool items of message messageID whose
+// calls are not in keep, as a retried response drops what its failed attempt
+// streamed. Only the live message is retried, so only the tail is scanned.
+func (m *Chat) RemoveStaleToolCalls(messageID string, keep []message.ToolCall) {
+	var stale []string
+	for i := m.list.Len() - 1; i >= 0; i-- {
+		item, ok := m.list.ItemAt(i).(chat.MessageItem)
+		if !ok {
+			break
+		}
+		tool, isTool := item.(chat.ToolMessageItem)
+		switch {
+		case isTool && tool.MessageID() == messageID:
+			id := tool.ToolCall().ID
+			if !slices.ContainsFunc(keep, func(tc message.ToolCall) bool { return tc.ID == id }) {
+				stale = append(stale, id)
+			}
+		case item.ID() == messageID || item.ID() == chat.AssistantInfoID(messageID):
+		default:
+			i = 0
+		}
+	}
+	for _, id := range stale {
+		m.RemoveMessage(id)
 	}
 }
 

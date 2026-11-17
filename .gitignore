@@ -1,61 +1,51 @@
-# Binaries for programs and plugins
-*.exe
-*.exe~
-*.dll
-*.so
-*.dylib
+# Binaries
+crush
+crush.exe
+crush.db
 
-# Test binary, built with `go test -c`
+# Build artifacts
 *.test
-
-# Output of the go coverage tool, specifically when used with LiteIDE
 *.out
+*.prof
+coverage/
+vendor/
 
-# Dependency directories (remove the comment below to include it)
-# vendor/
+# Go
+*.exe
+*.so
+*.dll
 
-# Go workspace file
-go.work
-go.work.sum
+# OS
+.DS_Store
+Thumbs.db
 
-# IDE specific files
-.idea/
+# IDE
 .vscode/
+.idea/
 *.swp
 *.swo
 
-# OS specific files
-.DS_Store
-.DS_Store?
-._*
-.Spotlight-V100
-.Trashes
-ehthumbs.db
-Thumbs.db
+# Logs
 *.log
 
-# Binary output directory
-/bin/
-/dist/
-
-# Local environment variables
-.env
-.env.local
-
-# Nix/direnv
-.direnv/
-
-**/.crush/**
-
-/crush
-/tmp/
-
-manpages/
-completions/crush.*sh
-.prettierignore
-.task
-crush.db
+# Temporary files
+tmp/
+temp/
+*.tmp
 
 # MCP Memory server data
 .mcp_memory/
 memory/
+
+# Documentation site
+/docs-site
+
+# Manpages
+manpages
+completions/crush.*sh
+
+# Prettier
+.prettierignore
+
+# Task
+.task
